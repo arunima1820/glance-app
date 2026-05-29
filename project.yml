@@ -1,0 +1,114 @@
+# project.yml — XcodeGen spec for Glance
+# YOUR_TEAM / com.YOUR_TEAM replaced with "local" placeholders for simulator dev.
+# Re-run xcodegen generate after your Apple Developer account is approved.
+
+name: Glance
+options:
+  bundleIdPrefix: com.glance.local
+  deploymentTarget:
+    iOS: "17.0"
+    watchOS: "10.0"
+  xcodeVersion: "16.0"
+  developmentLanguage: en
+  useBaseInternationalization: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGNING_REQUIRED: NO
+
+# MARK: - Targets
+
+targets:
+
+  # ─── Main iPhone app ───────────────────────────────────────────────────────
+  Glance:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Glance/Sources
+      - path: GlanceShared/Sources
+    resources: []
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.glance.local.app
+        INFOPLIST_FILE: Glance/Resources/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSET_CATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: NO
+    entitlements:
+      path: Glance/Resources/Glance.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.glance.local
+    dependencies:
+      - target: GlanceWidgetExtension
+      - target: GlanceWatchStub
+    scheme:
+      testTargets:
+        - GlanceTests
+
+  # ─── Widget extension ──────────────────────────────────────────────────────
+  GlanceWidgetExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: GlanceWidgetExtension/Sources
+      - path: GlanceShared/Sources
+      - path: Glance/Sources/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.glance.local.app.widget
+        INFOPLIST_FILE: GlanceWidgetExtension/Info.plist
+    entitlements:
+      path: GlanceWidgetExtension/GlanceWidgetExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.glance.local
+
+  # ─── Apple Watch app (stub — v2) ───────────────────────────────────────────
+  GlanceWatchStub:
+    type: application
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - path: GlanceWatchStub/Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.glance.local.app.watchkitapp
+        INFOPLIST_FILE: GlanceWatchStub/Info.plist
+
+  # ─── Unit tests ────────────────────────────────────────────────────────────
+  GlanceTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: GlanceTests
+    dependencies:
+      - target: Glance
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.glance.local.tests
+        INFOPLIST_FILE: GlanceTests/Info.plist
+
+# MARK: - Schemes
+
+schemes:
+  Glance:
+    build:
+      targets:
+        Glance: all
+        GlanceWidgetExtension: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - GlanceTests
+    archive:
+      config: Release
