@@ -47,82 +47,32 @@ struct SelectThemeIntent: AppIntent, WidgetConfigurationIntent {
 }
 
 // MARK: - Timeline provider
+// GlanceEntry and placeholder data live in GlanceShared/WidgetEntry.swift
+// so they can be unit-tested without importing WidgetKit.
 
-struct GlanceEntry: TimelineEntry {
-    let date: Date
-    let themes: [ThemeSnapshot]
-    let selectedThemeID: String?
-
-    var selectedTheme: ThemeSnapshot? {
-        if let id = selectedThemeID, let match = themes.first(where: { $0.id.uuidString == id }) {
-            return match
-        }
-        return themes.first
-    }
-}
+extension GlanceEntry: TimelineEntry {}
 
 struct GlanceTimelineProvider: AppIntentTimelineProvider {
     typealias Entry = GlanceEntry
     typealias Intent = SelectThemeIntent
 
     func placeholder(in context: Context) -> GlanceEntry {
-        GlanceEntry(date: Date(), themes: placeholderThemes, selectedThemeID: nil)
+        GlanceEntry(date: Date(), themes: WidgetPlaceholders.themes, selectedThemeID: nil)
     }
 
     func snapshot(for configuration: SelectThemeIntent, in context: Context) async -> GlanceEntry {
-        let themes = Self.loadThemes()
-        return GlanceEntry(date: Date(), themes: themes, selectedThemeID: configuration.selectedThemeID)
+        GlanceEntry(date: Date(), themes: Self.loadThemes(), selectedThemeID: configuration.selectedThemeID)
     }
 
     func timeline(for configuration: SelectThemeIntent, in context: Context) async -> Timeline<GlanceEntry> {
-        let themes = Self.loadThemes()
-        let entry = GlanceEntry(date: Date(), themes: themes, selectedThemeID: configuration.selectedThemeID)
-        // No time-based refresh needed — the app pushes updates via WidgetCenter.
+        let entry = GlanceEntry(date: Date(), themes: Self.loadThemes(), selectedThemeID: configuration.selectedThemeID)
         return Timeline(entries: [entry], policy: .never)
     }
 
-    /// Reads live data from the App Group bridge; falls back to placeholder
-    /// themes when running in the simulator without a real App Group (dev mode).
+    /// Live data from App Group bridge; falls back to placeholders in dev (no real App Group).
     private static func loadThemes() -> [ThemeSnapshot] {
         let live = WidgetDataBridge.readSnapshot()
-        return live.isEmpty ? GlanceTimelineProvider().placeholderThemes : live
-    }
-
-    var placeholderThemes: [ThemeSnapshot] {
-        [
-            ThemeSnapshot(
-                id: UUID(),
-                name: "Take meds",
-                colorToken: "sage",
-                iconEmoji: "💊",
-                steps: [
-                    StepSnapshot(id: UUID(), text: "Get water", iconEmoji: "💧"),
-                    StepSnapshot(id: UUID(), text: "Take tablets", iconEmoji: "💊"),
-                ]
-            ),
-            ThemeSnapshot(
-                id: UUID(),
-                name: "Leave the house",
-                colorToken: "sky",
-                iconEmoji: "🚪",
-                steps: [
-                    StepSnapshot(id: UUID(), text: "Grab keys", iconEmoji: "🔑"),
-                    StepSnapshot(id: UUID(), text: "Phone charged", iconEmoji: "🔋"),
-                    StepSnapshot(id: UUID(), text: "Lock the door", iconEmoji: nil),
-                ]
-            ),
-            ThemeSnapshot(
-                id: UUID(),
-                name: "Morning",
-                colorToken: "butter",
-                iconEmoji: "☀️",
-                steps: [
-                    StepSnapshot(id: UUID(), text: "Drink water", iconEmoji: "💧"),
-                    StepSnapshot(id: UUID(), text: "Take meds", iconEmoji: "💊"),
-                    StepSnapshot(id: UUID(), text: "Get dressed", iconEmoji: nil),
-                ]
-            ),
-        ]
+        return live.isEmpty ? WidgetPlaceholders.themes : live
     }
 }
 
@@ -266,11 +216,30 @@ struct ThemeChipView: View {
     }
 }
 
-// MARK: - Widget colors (lightweight, no asset catalog dependency)
+// MARK: - Widget colors (hardcoded — widgets run in their own bundle, no shared asset catalog)
 enum GlanceWidgetColors {
-    static let background    = Color("GlanceBackground")
-    static let primaryText   = Color("GlancePrimaryText")
-    static let secondaryText = Color("GlanceSecondaryText")
-    static let chipBackground = Color("GlanceSurface")
-    static let chipBorder     = Color.gray.opacity(0.2)
+    // Off-white in light mode, soft dark in dark mode
+    static let background = Color(light: Color(red: 0.976, green: 0.973, blue: 0.969),
+                                  dark:  Color(red: 0.110, green: 0.110, blue: 0.118))
+    // Near-black / near-white
+    static let primaryText = Color(light: Color(red: 0.118, green: 0.118, blue: 0.137),
+                                   dark:  Color(red: 0.933, green: 0.933, blue: 0.941))
+    // Mid-grey
+    static let secondaryText = Color(light: Color(red: 0.435, green: 0.439, blue: 0.467),
+                                     dark:  Color(red: 0.557, green: 0.557, blue: 0.576))
+    // Card surface
+    static let chipBackground = Color(light: .white,
+                                      dark:  Color(red: 0.173, green: 0.173, blue: 0.180))
+    static let chipBorder = Color.gray.opacity(0.2)
+}
+
+private extension Color {
+    /// Creates a color that adapts between light and dark mode without an asset catalog.
+    init(light: Color, dark: Color) {
+        self.init(UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(dark)
+                : UIColor(light)
+        })
+    }
 }

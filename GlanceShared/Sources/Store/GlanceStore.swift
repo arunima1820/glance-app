@@ -9,7 +9,8 @@ enum GlanceStore {
     static let appGroupIdentifier = "group.com.glance.local"
 
     static func makeContainer(inMemory: Bool = false) throws -> ModelContainer {
-        let schema = Schema([Theme.self, Step.self])
+        // GlanceCategory joins Theme and Step in the schema (many-to-many grouping).
+        let schema = Schema([Theme.self, Step.self, GlanceCategory.self])
 
         let config: ModelConfiguration
         if inMemory {

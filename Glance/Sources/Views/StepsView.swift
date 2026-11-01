@@ -1,98 +1,126 @@
 import SwiftUI
 import SwiftData
 
-// MARK: - StepsView  (Screen B — one theme's steps)
-/// Pure viewing screen. Nothing to tap on the steps themselves — this is for looking at.
-/// The same visual layout mirrors what the widget shows.
+// MARK: - StepsView  (Screen B — the glance view)
+/// The list you look at. Native `List` on the paper surface, ~9pt rows, no emoji.
+/// Completion follows the theme's style: a whole-list sweep bar, or per-item checkboxes.
 struct StepsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.palette) private var palette
+    @Environment(\.fonts) private var fonts
     let theme: Theme
 
     @State private var showingEdit = false
 
-    private var palette: ThemePalette.Entry { ThemePalette.entry(for: theme.colorToken) }
-
     var body: some View {
-        ZStack {
-            GlanceColors.background.ignoresSafeArea()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Theme header
-                    HStack(spacing: 16) {
-                        Text(theme.iconEmoji)
-                            .font(.system(size: 48))
-                            .accessibilityHidden(true)
-                        Text(theme.name)
-                            .font(GlanceFonts.largeTitle)
-                            .foregroundStyle(GlanceColors.primaryText)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 8)
-                    .padding(.bottom, 24)
-
-                    // Steps list
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(theme.orderedSteps) { step in
-                            StepRowView(step: step)
-                            if step.id != theme.orderedSteps.last?.id {
-                                Divider()
-                                    .padding(.leading, 24)
-                            }
-                        }
-                    }
-                    .background(GlanceColors.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .padding(.horizontal, 20)
+        List {
+            Section {
+                ForEach(theme.orderedSteps) { step in
+                    stepRow(step)
+                        .listRowBackground(palette.card)
+                        .listRowSeparatorTint(palette.hairline)
                 }
-                .padding(.bottom, 40)
+            } footer: {
+                footerHint
             }
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(palette.paper.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Edit") { showingEdit = true }
-                    .font(GlanceFonts.label)
-            }
-        }
-        .sheet(isPresented: $showingEdit) {
-            EditThemeView(theme: theme)
-        }
-        .accessibilityLabel("\(theme.iconEmoji) \(theme.name)")
+        .toolbar { toolbarContent }
+        .safeAreaInset(edge: .bottom) { sweepBar }
+        .sheet(isPresented: $showingEdit) { EditThemeView(theme: theme) }
     }
-}
 
-// MARK: - StepRowView
-struct StepRowView: View {
-    let step: Step
+    // MARK: Rows
 
-    var body: some View {
-        HStack(spacing: 16) {
-            if let icon = step.iconEmoji {
-                Text(icon)
-                    .font(.system(size: 28))
-                    .frame(width: 36)
-                    .accessibilityHidden(true)
-            } else {
-                // Bullet dot to maintain alignment when no icon
-                Circle()
-                    .fill(GlanceColors.bulletDot)
-                    .frame(width: 8, height: 8)
-                    .frame(width: 36)
-                    .accessibilityHidden(true)
+    /// One step row — optional leading checkbox (per-item), then the step text.
+    @ViewBuilder private func stepRow(_ step: Step) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            if theme.completionStyle == .perItem {
+                checkbox(for: step)
             }
-
             Text(step.text)
-                .font(GlanceFonts.stepText)
-                .foregroundStyle(GlanceColors.primaryText)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Spacer()
+                .font(fonts.font(.rowBody))
+                .foregroundStyle(isDone(step) ? palette.ink2 : palette.ink)
+                .strikethrough(isDone(step), color: palette.ink2)
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 18)
-        .contentShape(Rectangle()) // full-row tap area for accessibility
-        .accessibilityLabel(step.iconEmoji.map { "\($0) \(step.text)" } ?? step.text)
+        .padding(.vertical, 3)
+    }
+
+    /// A tappable completion box honoring the daily reset.
+    private func checkbox(for step: Step) -> some View {
+        Button {
+            setStep(step, complete: !isDone(step))
+        } label: {
+            Image(systemName: isDone(step) ? "checkmark.square.fill" : "square")
+                .font(.system(size: 17))
+                .foregroundStyle(isDone(step) ? palette.marker : palette.ink2)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Sweep bar (whole-list completion)
+
+    @ViewBuilder private var sweepBar: some View {
+        if theme.completionStyle == .sweep {
+            let done = theme.isListComplete()
+            Button { setSweep(complete: !done) } label: {
+                Text(done ? "done — tap to bring it back" : "all done!")
+                    .font(fonts.font(.button))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(palette.markerDeep)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .padding(16)
+        }
+    }
+
+    // MARK: Toolbar + footer
+
+    @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            HStack(spacing: 8) {
+                Image(systemName: ThemeIcons.symbolName(for: theme.iconToken))
+                    .foregroundStyle(palette.ink)
+                Text(theme.name)
+                    .font(fonts.font(.screenTitle))
+                    .foregroundStyle(palette.ink)
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Edit") { showingEdit = true }
+                .foregroundStyle(palette.marker)
+        }
+    }
+
+    @ViewBuilder private var footerHint: some View {
+        Text(theme.completionStyle == .sweep
+             ? "Wipes clean and comes back tomorrow."
+             : "Tap each box. Nothing is ever “overdue.”")
+            .font(fonts.font(.caption))
+            .foregroundStyle(palette.ink2)
+    }
+
+    // MARK: Completion helpers
+
+    /// Whether a step counts as done right now (false once its calendar day passes).
+    private func isDone(_ step: Step) -> Bool {
+        CompletionResetPolicy.isStillComplete(completedAt: step.completedAt, now: .now)
+    }
+
+    private func setStep(_ step: Step, complete: Bool) {
+        step.setComplete(complete)
+        try? modelContext.save()
+    }
+
+    private func setSweep(complete: Bool) {
+        if complete { theme.sweepComplete() } else { theme.resetCompletion() }
+        try? modelContext.save()
     }
 }

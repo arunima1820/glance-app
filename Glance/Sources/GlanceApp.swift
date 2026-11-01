@@ -14,6 +14,7 @@ struct GlanceApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .glanceStyled()          // injects resolved palette + fonts + shared config
                 .modelContainer(container)
         }
     }

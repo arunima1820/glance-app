@@ -2,8 +2,9 @@ import Foundation
 import SwiftData
 
 // MARK: - Step
-/// One small action inside a Theme (e.g. "Grab keys").
-/// Steps have no completion state in v1 — they are for looking at, not checking off.
+/// One small action inside a Theme (e.g. "Grab keys") — a single "task".
+/// Completion is optional and supports two styles (see ThemeCompletionStyle); a step
+/// can also carry its own categories and accent color independent of its theme.
 @Model
 final class Step: Identifiable {
     var id: UUID
@@ -12,6 +13,12 @@ final class Step: Identifiable {
     var sortOrder: Int
     var createdAt: Date
     var updatedAt: Date
+
+    // New in this version — defaults keep existing stored data migratable.
+    var isComplete: Bool = false          // per-item completion flag
+    var completedAt: Date? = nil          // timestamp of completion (drives daily reset)
+    var colorToken: String? = nil         // optional own accent, separate from categories
+    var categories: [GlanceCategory] = []       // plain side of GlanceCategory.steps many-to-many
 
     var theme: Theme?
 
@@ -27,5 +34,15 @@ final class Step: Identifiable {
         self.sortOrder = sortOrder
         self.createdAt = Date()
         self.updatedAt = Date()
+    }
+
+    /// Marks the step complete (or not) and records the timestamp used by the daily reset.
+    /// - Parameters:
+    ///   - complete: desired completion state.
+    ///   - now: the moment to stamp (injectable for tests).
+    func setComplete(_ complete: Bool, now: Date = Date()) {
+        isComplete = complete
+        completedAt = complete ? now : nil
+        updatedAt = now
     }
 }
