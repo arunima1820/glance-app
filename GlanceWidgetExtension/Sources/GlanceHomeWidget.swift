@@ -199,11 +199,9 @@ struct WidgetDashedDivider: View {
 
 // MARK: Small widget
 struct SmallWidgetView: View {
-    @Environment(\.colorScheme) private var scheme
     let entry: GlanceEntry
 
     var body: some View {
-        let style = WidgetStyle(scheme)
         Group {
             if let theme = entry.selectedTheme {
                 VStack(alignment: .leading, spacing: 5) {
