@@ -52,5 +52,20 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.glance.local.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>glance</string>
+			</array>
+		</dict>
+	</array>
+	<key>UIAppFonts</key>
+	<array>
+		<string>CabinSketch-Bold.ttf</string>
+	</array>
 </dict>
 </plist>

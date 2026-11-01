@@ -15,7 +15,6 @@ final class Step: Identifiable {
     var updatedAt: Date
 
     // New in this version — defaults keep existing stored data migratable.
-    var isComplete: Bool = false          // per-item completion flag
     var completedAt: Date? = nil          // timestamp of completion (drives daily reset)
     var colorToken: String? = nil         // optional own accent, separate from categories
     var categories: [GlanceCategory] = []       // plain side of GlanceCategory.steps many-to-many
@@ -36,13 +35,30 @@ final class Step: Identifiable {
         self.updatedAt = Date()
     }
 
-    /// Marks the step complete (or not) and records the timestamp used by the daily reset.
+    /// Marks the step complete (or not): stamps `completedAt`, which the list's repeat
+    /// schedule reads to decide whether the tick still counts.
     /// - Parameters:
     ///   - complete: desired completion state.
     ///   - now: the moment to stamp (injectable for tests).
     func setComplete(_ complete: Bool, now: Date = Date()) {
-        isComplete = complete
         completedAt = complete ? now : nil
         updatedAt = now
+    }
+}
+
+// MARK: - StepText
+/// Splits a step's text into the bold lead word and the plain detail that follows,
+/// so rows can render "**Pour** a full glass of water" without storing two fields.
+enum StepText {
+    /// Splits `text` at the first run of whitespace, trimming the ends first.
+    /// - Parameter text: the raw step text.
+    /// - Returns: `lead` (first word, possibly empty) and `detail` (the rest, possibly empty).
+    static func split(_ text: String) -> (lead: String, detail: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let gap = trimmed.firstIndex(where: \.isWhitespace) else {
+            return (trimmed, "")
+        }
+        let detail = trimmed[gap...].trimmingCharacters(in: .whitespacesAndNewlines)
+        return (String(trimmed[..<gap]), detail)
     }
 }

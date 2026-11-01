@@ -33,7 +33,8 @@ targets:
     sources:
       - path: Glance/Sources
       - path: GlanceShared/Sources
-    resources: []
+      - path: GlanceShared/Fonts      # Cabin Sketch (OFL); every file listed in UIAppFonts
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.glance.local.app
@@ -60,6 +61,8 @@ targets:
     sources:
       - path: GlanceWidgetExtension/Sources
       - path: GlanceShared/Sources
+      - path: GlanceShared/Fonts
+        buildPhase: resources
       - path: Glance/Sources/Assets.xcassets
     settings:
       base:
@@ -108,6 +111,9 @@ schemes:
       config: Debug
     test:
       config: Debug
+      gatherCoverageData: true      # ⌘U in Xcode also shows coverage (Report navigator → Coverage)
+      coverageTargets:
+        - Glance
       targets:
         - GlanceTests
     archive:

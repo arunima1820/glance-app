@@ -1,41 +1,34 @@
 import XCTest
-import SwiftUI
 @testable import Glance
 
 // MARK: - CategoryPaletteTests
-// Covers: CategoryPalette.swift — lookup behaviour and palette integrity.
+// Covers: GlanceShared/Sources/Models/CategoryPalette.swift (CategoryPalette)
 
 final class CategoryPaletteTests: XCTestCase {
 
-    func testEntryForKnownTokenReturnsCorrectEntry() {
+    func testRedTokenIsAvailableAndReturnsRedEntry() {
+        XCTAssertTrue(CategoryPalette.all.contains { $0.id == "red" }, "Red (\"Urgent\") must be offered")
         let entry = CategoryPalette.entry(for: "red")
         XCTAssertEqual(entry.id, "red")
         XCTAssertEqual(entry.displayName, "Red")
     }
 
-    func testEntryForUnknownTokenFallsBackToFirst() {
-        let entry = CategoryPalette.entry(for: "not-a-color")
-        XCTAssertEqual(entry.id, CategoryPalette.all.first?.id)
+    func testUnknownTokenFallsBackToFirstEntry() {
+        XCTAssertEqual(CategoryPalette.entry(for: "not-a-color").id, CategoryPalette.all.first?.id)
     }
 
-    func testAllTokensAreUnique() {
+    func testTokensAreUnique() {
         let ids = CategoryPalette.all.map(\.id)
-        XCTAssertEqual(ids.count, Set(ids).count, "Every category color token should be unique")
+        XCTAssertEqual(ids.count, Set(ids).count)
     }
 
-    func testEveryEntryHasNonEmptyDisplayName() {
+    func testEveryEntryHasDisplayName() {
         for entry in CategoryPalette.all {
             XCTAssertFalse(entry.displayName.isEmpty, "Entry '\(entry.id)' has an empty displayName")
         }
     }
 
-    func testPaletteOffersAnElaborateRange() {
-        // The user asked for "clear and elaborate" color-coding — expect a broad set.
+    func testPaletteOffersAtLeastTenColors() {
         XCTAssertGreaterThanOrEqual(CategoryPalette.all.count, 10)
-    }
-
-    func testRedIsAvailableForUrgent() {
-        // Red = "Urgent" is the user's own example; it must exist in the palette.
-        XCTAssertTrue(CategoryPalette.all.contains { $0.id == "red" })
     }
 }

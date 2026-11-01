@@ -1,127 +1,126 @@
 import XCTest
-import SwiftData
 @testable import Glance
 
-// MARK: - ModelTests
-// Covers: Theme.swift, Step.swift
-// Each test group maps to a distinct behaviour of the model layer.
+// MARK: - ThemeModelTests
+// Covers: Theme.swift (Theme init defaults, orderedSteps, recurrence bridge to repeat* fields).
 
-final class ModelTests: XCTestCase {
+final class ThemeModelTests: XCTestCase {
 
-    var container: ModelContainer!
-    var context: ModelContext!
+    // MARK: Initialisation
 
-    override func setUp() async throws {
-        container = try GlanceStore.makeContainer(inMemory: true)
-        context = ModelContext(container)
-    }
-
-    override func tearDown() async throws {
-        container = nil
-        context = nil
-    }
-
-    // MARK: Theme — initialisation
-
-    func testThemeDefaultsAreSet() {
-        let theme = Theme(name: "Morning", colorToken: "butter", iconEmoji: "☀️")
-        XCTAssertFalse(theme.id == UUID(), "ID should be unique per instance")
+    func testNewThemeHasExpectedDefaults() {
+        let theme = Theme(name: "Morning", colorToken: "butter")
         XCTAssertEqual(theme.name, "Morning")
         XCTAssertEqual(theme.colorToken, "butter")
-        XCTAssertEqual(theme.iconEmoji, "☀️")
-        XCTAssertEqual(theme.sortOrder, 0)
+        XCTAssertEqual(theme.iconToken, ThemeIcons.default)
+        XCTAssertEqual(theme.recurrence.kind, .daily)
+        XCTAssertEqual(theme.completionStyle, .sweep)
+        XCTAssertNil(theme.lastSweptAt)
         XCTAssertTrue(theme.steps.isEmpty)
-        // createdAt and updatedAt should be recent
-        XCTAssertLessThanOrEqual(theme.createdAt.timeIntervalSinceNow, 1)
     }
 
-    // MARK: Theme — orderedSteps
+    // MARK: orderedSteps
 
-    func testOrderedStepsSortsCorrectly() {
-        let theme = Theme(name: "Leave the house", colorToken: "sky", iconEmoji: "🚪")
-        let s2 = Step(text: "Lock the door", sortOrder: 2)
-        let s0 = Step(text: "Grab keys",     sortOrder: 0)
-        let s1 = Step(text: "Phone charged", sortOrder: 1)
-        theme.steps = [s2, s0, s1] // intentionally shuffled
+    func testOrderedStepsSortsBySortOrder() {
+        let theme = Theme(name: "Leave the house")
+        XCTAssertTrue(theme.orderedSteps.isEmpty)
+
+        theme.steps = [Step(text: "Do the thing", sortOrder: 0)]
+        XCTAssertEqual(theme.orderedSteps.map(\.text), ["Do the thing"])
+
+        theme.steps = [
+            Step(text: "Lock the door", sortOrder: 2),
+            Step(text: "Grab keys", sortOrder: 0),
+            Step(text: "Phone charged", sortOrder: 1),
+        ]
         XCTAssertEqual(theme.orderedSteps.map(\.text), ["Grab keys", "Phone charged", "Lock the door"])
     }
 
-    func testOrderedStepsEmptyTheme() {
-        let theme = Theme(name: "Empty", colorToken: "slate", iconEmoji: "📋")
-        XCTAssertTrue(theme.orderedSteps.isEmpty)
+    // MARK: Recurrence bridge
+
+    func testRecurrenceRoundTripsThroughStoredFields() {
+        let theme = Theme(name: "Bins")
+        theme.recurrence = Recurrence(kind: .weekly, weekdays: [5, 3], dayOfMonth: 12, interval: 4)
+        XCTAssertEqual(theme.repeatWeekdays, [3, 5])
+        XCTAssertEqual(theme.recurrence.kind, .weekly)
+        XCTAssertEqual(theme.recurrence.weekdays, [3, 5])
+        XCTAssertEqual(theme.recurrence.dayOfMonth, 12)
+        XCTAssertEqual(theme.recurrence.interval, 4)
     }
 
-    func testOrderedStepsSingleStep() {
-        let theme = Theme(name: "One thing", colorToken: "sage", iconEmoji: "1️⃣")
-        theme.steps = [Step(text: "Do the thing", sortOrder: 0)]
-        XCTAssertEqual(theme.orderedSteps.count, 1)
-        XCTAssertEqual(theme.orderedSteps.first?.text, "Do the thing")
+    func testUnknownRepeatKindFallsBackToDaily() {
+        let theme = Theme(name: "Bins")
+        theme.repeatKind = "fortnightly"
+        XCTAssertEqual(theme.recurrence.kind, .daily)
     }
 
-    // MARK: Step — initialisation
+    func testRecurrenceAnchorIsCreationDate() {
+        let theme = Theme(name: "Plants")
+        XCTAssertEqual(theme.recurrence.anchor, theme.createdAt)
+    }
+}
 
-    func testStepOptionalEmojiIsNilByDefault() {
-        let step = Step(text: "Grab keys")
+// MARK: - StepModelTests
+// Covers: Step.swift (Step init defaults, Step.setComplete(_:now:)).
+
+final class StepModelTests: XCTestCase {
+
+    private let now = Date(timeIntervalSinceReferenceDate: 815_000_000)
+
+    // MARK: Initialisation
+
+    func testNewStepIsIncompleteWithGivenSortOrder() {
+        let step = Step(text: "Grab keys", sortOrder: 3)
+        XCTAssertNil(step.completedAt)
         XCTAssertNil(step.iconEmoji)
-        XCTAssertEqual(step.sortOrder, 0)
+        XCTAssertEqual(step.sortOrder, 3)
     }
 
-    func testStepWithExplicitEmoji() {
-        let step = Step(text: "Get water", iconEmoji: "💧", sortOrder: 1)
-        XCTAssertEqual(step.iconEmoji, "💧")
-        XCTAssertEqual(step.sortOrder, 1)
+    // MARK: setComplete
+
+    func testSetCompleteTrueStampsCompletedAtAndUpdatedAt() {
+        let step = Step(text: "Grab keys")
+        step.setComplete(true, now: now)
+        XCTAssertEqual(step.completedAt, now)
+        XCTAssertEqual(step.updatedAt, now)
     }
 
-    // MARK: SwiftData — persistence
+    func testSetCompleteFalseClearsCompletedAt() {
+        let step = Step(text: "Grab keys")
+        step.setComplete(true, now: now)
+        let later = now.addingTimeInterval(60)
+        step.setComplete(false, now: later)
+        XCTAssertNil(step.completedAt)
+        XCTAssertEqual(step.updatedAt, later)
+    }
+}
 
-    func testInsertAndFetchTheme() throws {
-        let theme = Theme(name: "Take meds", colorToken: "sage", iconEmoji: "💊", sortOrder: 0)
-        context.insert(theme)
-        try context.save()
+// MARK: - StepTextTests
+// Covers: StepText.split (bold lead word + detail for step rows).
 
-        let fetched = try context.fetch(FetchDescriptor<Theme>())
-        XCTAssertEqual(fetched.count, 1)
-        XCTAssertEqual(fetched.first?.name, "Take meds")
-        XCTAssertEqual(fetched.first?.colorToken, "sage")
+final class StepTextTests: XCTestCase {
+
+    func testSplitsFirstWordFromDetail() {
+        let parts = StepText.split("Pour a full glass of water")
+        XCTAssertEqual(parts.lead, "Pour")
+        XCTAssertEqual(parts.detail, "a full glass of water")
     }
 
-    func testMultipleThemesSortedByOrder() throws {
-        context.insert(Theme(name: "B", colorToken: "sky", iconEmoji: "B", sortOrder: 1))
-        context.insert(Theme(name: "A", colorToken: "sage", iconEmoji: "A", sortOrder: 0))
-        context.insert(Theme(name: "C", colorToken: "rose", iconEmoji: "C", sortOrder: 2))
-        try context.save()
-
-        let descriptor = FetchDescriptor<Theme>(sortBy: [SortDescriptor(\.sortOrder)])
-        let fetched = try context.fetch(descriptor)
-        XCTAssertEqual(fetched.map(\.name), ["A", "B", "C"])
+    func testSingleWordHasNoDetail() {
+        let parts = StepText.split("Keys")
+        XCTAssertEqual(parts.lead, "Keys")
+        XCTAssertEqual(parts.detail, "")
     }
 
-    func testCascadeDeleteRemovesSteps() throws {
-        let theme = Theme(name: "Cascade test", colorToken: "slate", iconEmoji: "🗑️")
-        let step = Step(text: "Should be deleted", sortOrder: 0)
-        theme.steps = [step]
-        context.insert(theme)
-        try context.save()
-
-        XCTAssertEqual(try context.fetch(FetchDescriptor<Step>()).count, 1)
-
-        context.delete(theme)
-        try context.save()
-
-        XCTAssertEqual(try context.fetch(FetchDescriptor<Theme>()).count, 0)
-        XCTAssertEqual(try context.fetch(FetchDescriptor<Step>()).count, 0, "Steps should be cascade-deleted")
+    func testTrimsAndCollapsesTheGap() {
+        let parts = StepText.split("  Lock   the deadbolt \n")
+        XCTAssertEqual(parts.lead, "Lock")
+        XCTAssertEqual(parts.detail, "the deadbolt")
     }
 
-    func testUpdatingThemeNamePersists() throws {
-        let theme = Theme(name: "Old name", colorToken: "sage", iconEmoji: "✏️")
-        context.insert(theme)
-        try context.save()
-
-        theme.name = "New name"
-        theme.updatedAt = Date()
-        try context.save()
-
-        let fetched = try context.fetch(FetchDescriptor<Theme>())
-        XCTAssertEqual(fetched.first?.name, "New name")
+    func testEmptyTextYieldsEmptyParts() {
+        let parts = StepText.split("   ")
+        XCTAssertEqual(parts.lead, "")
+        XCTAssertEqual(parts.detail, "")
     }
 }

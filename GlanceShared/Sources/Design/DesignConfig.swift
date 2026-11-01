@@ -56,7 +56,7 @@ private struct PaletteKey: EnvironmentKey {
     static let defaultValue: Palette = Palettes.fridgeMarker.light
 }
 private struct FontsKey: EnvironmentKey {
-    nonisolated(unsafe) static let defaultValue: FontTheme = MarkerFontTheme()
+    static let defaultValue: FontTheme = MarkerFontTheme()
 }
 
 extension EnvironmentValues {

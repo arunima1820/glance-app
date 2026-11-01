@@ -1,123 +1,167 @@
 import XCTest
-import SwiftData
 @testable import Glance
 
-// MARK: - CompletionTests
-// Covers: CompletionResetPolicy.swift (pure daily-reset logic) and the Theme
-// completion helpers in ThemeCompletion.swift (sweep + per-item), including the
-// rule that nothing stays "done" past the calendar day it was completed on.
+// MARK: - ThemeCompletionTests
+// Covers: ThemeCompletion.swift (Theme.isDone, isListComplete, allStepsDone, listCompletedAt,
+// toggle, sweepComplete, resetCompletion) on top of the Theme.recurrence schedule.
 
-final class CompletionTests: XCTestCase {
+final class ThemeCompletionTests: XCTestCase {
 
-    // Fixed UTC calendar so day-boundary tests are deterministic across machines.
-    private var calendar: Calendar = {
+    private let calendar: Calendar = {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!
+        cal.locale = Locale(identifier: "en_US_POSIX")
         return cal
     }()
 
-    /// Builds a UTC date at the given day/time for precise boundary tests.
-    private func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int = 12) -> Date {
-        var c = DateComponents()
-        c.year = year; c.month = month; c.day = day; c.hour = hour
-        return calendar.date(from: c)!
+    /// UTC date helper. 2026-11-02 is a Monday.
+    private func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int = 12) -> Date {
+        calendar.date(from: DateComponents(year: y, month: m, day: d, hour: h))!
     }
 
-    // MARK: Pure policy — isStillComplete
-
-    func testNeverCompletedIsNotComplete() {
-        XCTAssertFalse(CompletionResetPolicy.isStillComplete(completedAt: nil, now: date(2026, 10, 13), calendar: calendar))
+    private func twoStepTheme() -> (Theme, [Step]) {
+        let steps = [Step(text: "Keys", sortOrder: 0), Step(text: "Phone", sortOrder: 1)]
+        return (Theme(name: "Leave", colorToken: "sky", steps: steps), steps)
     }
 
-    func testCompletedSameDayIsStillComplete() {
-        let completed = date(2026, 10, 13, 8)
-        let now = date(2026, 10, 13, 22)
-        XCTAssertTrue(CompletionResetPolicy.isStillComplete(completedAt: completed, now: now, calendar: calendar))
+    // MARK: isListComplete
+
+    func testListCompleteOnlyWhenEveryStepTickedThisPeriod() {
+        let (theme, steps) = twoStepTheme()
+        let now = date(2026, 11, 1, 9)
+        steps[0].setComplete(true, now: now)
+        XCTAssertFalse(theme.isListComplete(now: now, calendar: calendar))
+        steps[1].setComplete(true, now: now)
+        XCTAssertTrue(theme.isListComplete(now: now, calendar: calendar))
     }
 
-    func testCompletedYesterdayIsReset() {
-        let completed = date(2026, 10, 12, 23)
-        let now = date(2026, 10, 13, 1)
-        XCTAssertFalse(CompletionResetPolicy.isStillComplete(completedAt: completed, now: now, calendar: calendar),
-                       "Completion from a previous day should reset")
+    func testEmptyListIsNotComplete() {
+        let theme = Theme(name: "Empty")
+        XCTAssertFalse(theme.isListComplete(now: date(2026, 11, 1), calendar: calendar))
     }
 
-    func testSweepActiveMirrorsItemRule() {
-        XCTAssertTrue(CompletionResetPolicy.isSweepActive(sweptAt: date(2026, 10, 13, 9), now: date(2026, 10, 13, 20), calendar: calendar))
-        XCTAssertFalse(CompletionResetPolicy.isSweepActive(sweptAt: date(2026, 10, 12, 9), now: date(2026, 10, 13, 9), calendar: calendar))
+    // MARK: sweepComplete / resetCompletion
+
+    func testSweepTicksEveryStepAndCompletesList() {
+        let (theme, steps) = twoStepTheme()
+        let now = date(2026, 11, 1, 9)
+        theme.sweepComplete(now: now)
+        XCTAssertEqual(theme.lastSweptAt, now)
+        XCTAssertTrue(steps.allSatisfy { $0.completedAt == now })
+        XCTAssertTrue(theme.isListComplete(now: date(2026, 11, 1, 18), calendar: calendar))
     }
 
-    // MARK: Step.setComplete
+    func testStepAddedAfterSweepMakesListIncomplete() {
+        let (theme, _) = twoStepTheme()
+        theme.sweepComplete(now: date(2026, 11, 1, 9))
+        theme.steps.append(Step(text: "Wallet", sortOrder: 2))
+        XCTAssertFalse(theme.isListComplete(now: date(2026, 11, 1, 10), calendar: calendar))
+    }
 
-    func testStepSetCompleteStampsTimestamp() {
-        let step = Step(text: "Grab keys")
-        let now = date(2026, 10, 13)
-        step.setComplete(true, now: now)
-        XCTAssertTrue(step.isComplete)
-        XCTAssertEqual(step.completedAt, now)
+    func testDailySweepResetsNextDay() {
+        let (theme, _) = twoStepTheme()
+        theme.sweepComplete(now: date(2026, 11, 1, 9))
+        XCTAssertFalse(theme.isListComplete(now: date(2026, 11, 2, 9), calendar: calendar))
+    }
 
-        step.setComplete(false, now: now)
-        XCTAssertFalse(step.isComplete)
+    func testResetCompletionClearsTicksAndSweep() {
+        let (theme, steps) = twoStepTheme()
+        theme.sweepComplete(now: date(2026, 11, 1, 9))
+        theme.resetCompletion(now: date(2026, 11, 1, 10))
+        XCTAssertNil(theme.lastSweptAt)
+        XCTAssertTrue(steps.allSatisfy { $0.completedAt == nil })
+    }
+
+    // MARK: toggle
+
+    func testToggleChecksThenUnchecksAStep() {
+        let (theme, steps) = twoStepTheme()
+        let now = date(2026, 11, 1)
+        theme.toggle(steps[0], now: now, calendar: calendar)
+        XCTAssertTrue(theme.isDone(steps[0].completedAt, now: now, calendar: calendar))
+        theme.toggle(steps[0], now: now, calendar: calendar)
+        XCTAssertNil(steps[0].completedAt)
+    }
+
+    func testToggleOnYesterdaysTickChecksItAgain() {
+        let (theme, steps) = twoStepTheme()
+        steps[0].setComplete(true, now: date(2026, 10, 31))
+        theme.toggle(steps[0], now: date(2026, 11, 1), calendar: calendar)
+        XCTAssertEqual(steps[0].completedAt, date(2026, 11, 1))
+    }
+
+    func testUncheckingAStepLiftsTheSweep() {
+        let (theme, steps) = twoStepTheme()
+        let now = date(2026, 11, 1)
+        theme.sweepComplete(now: now)
+        theme.toggle(steps[0], now: now, calendar: calendar)
+        XCTAssertNil(theme.lastSweptAt)
+        XCTAssertFalse(theme.isListComplete(now: now, calendar: calendar))
+    }
+
+    func testOneTimeTickStillCountsAYearLater() {
+        let step = Step(text: "Renew passport", sortOrder: 0)
+        let theme = Theme(name: "Passport", steps: [step])
+        theme.recurrence = Recurrence(kind: .oneTime)
+        theme.toggle(step, now: date(2026, 11, 1), calendar: calendar)
+        XCTAssertTrue(theme.isDone(step.completedAt, now: date(2027, 11, 1), calendar: calendar))
+        XCTAssertTrue(theme.isListComplete(now: date(2027, 11, 1), calendar: calendar))
+    }
+
+    func testWeeklyTapOnTuesdayUnchecksMondaysTick() {
+        let step = Step(text: "Bins out", sortOrder: 0)
+        let theme = Theme(name: "Bins", steps: [step])
+        theme.recurrence = Recurrence(kind: .weekly, weekdays: [2])
+        theme.toggle(step, now: date(2026, 11, 2, 8), calendar: calendar)
+        theme.toggle(step, now: date(2026, 11, 3, 8), calendar: calendar)
         XCTAssertNil(step.completedAt)
     }
 
-    // MARK: Theme — sweep style
+    // MARK: allStepsDone
 
-    func testSweepCompleteMarksWholeListAndStamps() {
-        let theme = Theme(name: "Leave", colorToken: "sky", iconEmoji: "🚪", completionStyle: .sweep)
-        theme.steps = [Step(text: "Keys", sortOrder: 0), Step(text: "Phone", sortOrder: 1)]
-        let now = date(2026, 10, 13, 9)
-
-        theme.sweepComplete(now: now)
-        XCTAssertEqual(theme.lastSweptAt, now)
-        XCTAssertTrue(theme.steps.allSatisfy(\.isComplete))
-        XCTAssertTrue(theme.isListComplete(now: date(2026, 10, 13, 18), calendar: calendar))
+    func testAllStepsDoneIsFalseWithAStaleTick() {
+        let (theme, steps) = twoStepTheme()
+        steps[0].setComplete(true, now: date(2026, 10, 31))
+        steps[1].setComplete(true, now: date(2026, 11, 1))
+        XCTAssertFalse(theme.allStepsDone(now: date(2026, 11, 1), calendar: calendar))
     }
 
-    func testSweepResetsNextDay() {
-        let theme = Theme(name: "Leave", colorToken: "sky", iconEmoji: "🚪", completionStyle: .sweep)
-        theme.steps = [Step(text: "Keys", sortOrder: 0)]
-        theme.sweepComplete(now: date(2026, 10, 13, 9))
-        XCTAssertFalse(theme.isListComplete(now: date(2026, 10, 14, 9), calendar: calendar),
-                       "A sweep should not carry into the next day")
+    // MARK: listCompletedAt
+
+    func testListCompletedAtIsNilWhenNotComplete() {
+        let (theme, steps) = twoStepTheme()
+        steps[0].setComplete(true, now: date(2026, 11, 1, 8))
+        XCTAssertNil(theme.listCompletedAt(now: date(2026, 11, 1, 9), calendar: calendar))
     }
 
-    // MARK: Theme — per-item style
-
-    func testPerItemListCompleteOnlyWhenAllDone() {
-        let theme = Theme(name: "Meds", colorToken: "sage", iconEmoji: "💊", completionStyle: .perItem)
-        let s0 = Step(text: "Water", sortOrder: 0)
-        let s1 = Step(text: "Tablets", sortOrder: 1)
-        theme.steps = [s0, s1]
-        let now = date(2026, 10, 13, 9)
-
-        s0.setComplete(true, now: now)
-        XCTAssertFalse(theme.isListComplete(now: now, calendar: calendar), "One of two done → not complete")
-
-        s1.setComplete(true, now: now)
-        XCTAssertTrue(theme.isListComplete(now: now, calendar: calendar), "All done → complete")
+    func testListCompletedAtIsLatestCurrentTick() {
+        let (theme, steps) = twoStepTheme()
+        steps[0].setComplete(true, now: date(2026, 11, 1, 10))
+        steps[1].setComplete(true, now: date(2026, 11, 1, 8))
+        XCTAssertEqual(theme.listCompletedAt(now: date(2026, 11, 1, 12), calendar: calendar), date(2026, 11, 1, 10))
     }
 
-    func testPerItemEmptyThemeIsNotComplete() {
-        let theme = Theme(name: "Empty", colorToken: "slate", iconEmoji: "📋", completionStyle: .perItem)
-        XCTAssertFalse(theme.isListComplete(now: date(2026, 10, 13), calendar: calendar))
+    func testListCompletedAtIgnoresStaleTicks() {
+        let (theme, _) = twoStepTheme()
+        theme.sweepComplete(now: date(2026, 10, 31, 9))
+        XCTAssertNil(theme.listCompletedAt(now: date(2026, 11, 1, 9), calendar: calendar))
     }
 
-    func testResetCompletionClearsEverything() {
-        let theme = Theme(name: "Meds", colorToken: "sage", iconEmoji: "💊", completionStyle: .sweep)
-        theme.steps = [Step(text: "Water", sortOrder: 0)]
-        theme.sweepComplete(now: date(2026, 10, 13, 9))
-
-        theme.resetCompletion(now: date(2026, 10, 13, 10))
-        XCTAssertNil(theme.lastSweptAt)
-        XCTAssertTrue(theme.steps.allSatisfy { !$0.isComplete })
+    func testWeeklyListStaysDoneAndReportsCompletion() {
+        let step = Step(text: "Bins out", sortOrder: 0)
+        let theme = Theme(name: "Bins", colorToken: "sky", steps: [step])
+        theme.recurrence = Recurrence(kind: .weekly, weekdays: [2])
+        theme.toggle(step, now: date(2026, 11, 2, 8), calendar: calendar)
+        XCTAssertTrue(theme.isListComplete(now: date(2026, 11, 5), calendar: calendar))
+        XCTAssertEqual(theme.listCompletedAt(now: date(2026, 11, 5), calendar: calendar), date(2026, 11, 2, 8))
+        XCTAssertNil(theme.listCompletedAt(now: date(2026, 11, 9), calendar: calendar), "New week: not finished")
     }
 
-    // MARK: Default completion style
-
-    func testNewThemeDefaultsToSweep() {
-        // Product decision: the fridge-board "clear the whole list" gesture is the default;
-        // changeable per theme in the edit screen.
-        XCTAssertEqual(Theme(name: "X", colorToken: "sage", iconEmoji: "✅").completionStyle, .sweep)
+    func testOneTimeListReportsOriginalCompletion() {
+        let step = Step(text: "Renew passport", sortOrder: 0)
+        let theme = Theme(name: "Passport", steps: [step])
+        theme.recurrence = Recurrence(kind: .oneTime)
+        theme.toggle(step, now: date(2026, 11, 1, 8), calendar: calendar)
+        XCTAssertEqual(theme.listCompletedAt(now: date(2027, 6, 1), calendar: calendar), date(2026, 11, 1, 8))
     }
 }

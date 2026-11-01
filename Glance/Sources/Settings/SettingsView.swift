@@ -1,121 +1,115 @@
 import SwiftUI
 import SwiftData
 
-// MARK: - SettingsView  (Screen D)
+// MARK: - SettingsView  (Screen D: the Settings tab)
+/// Appearance, title style, optional features (all off) and data/about, as a native `Form`
+/// on the paper surface. Choices persist in `@AppStorage`; ContentView applies them app-wide.
 struct SettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.palette) private var palette
+    @Environment(\.fonts) private var fonts
 
     @AppStorage("glance.appearance") private var appearance: AppAppearance = .system
-    @AppStorage("glance.font") private var fontChoice: FontChoice = .system
-    @AppStorage("glance.textSizeNote") private var textSizeNoteAcknowledged = false
+    @AppStorage(WidgetDataBridge.fontThemeKey, store: WidgetDataBridge.defaults) private var fontThemeID: FontThemeID = FontThemes.default
 
     var body: some View {
         NavigationStack {
             Form {
-                // MARK: Appearance
-                Section("Appearance") {
-                    Picker("Colour scheme", selection: $appearance) {
-                        ForEach(AppAppearance.allCases) { mode in
-                            Text(mode.label).tag(mode)
-                        }
-                    }
-                    .accessibilityLabel("Colour scheme")
-
-                    Picker("Font", selection: $fontChoice) {
-                        ForEach(FontChoice.allCases) { choice in
-                            Text(choice.label).tag(choice)
-                        }
-                    }
-                    .accessibilityLabel("Font")
-
-                    Text("Text size follows your iOS system setting (Settings → Display & Brightness → Text Size).")
-                        .font(GlanceFonts.caption)
-                        .foregroundStyle(GlanceColors.secondaryText)
-                }
-
-                // MARK: Optional features (all off by default — v1 placeholder)
-                Section {
-                    Toggle(isOn: .constant(false)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\"You are here\" marker")
-                                .font(GlanceFonts.body)
-                            Text("Gently highlights your current step.")
-                                .font(GlanceFonts.caption)
-                                .foregroundStyle(GlanceColors.secondaryText)
-                        }
-                    }
-                    .disabled(true)
-
-                    Toggle(isOn: .constant(false)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Gentle reminders")
-                                .font(GlanceFonts.body)
-                            Text("Optional nudge at a time you choose.")
-                                .font(GlanceFonts.caption)
-                                .foregroundStyle(GlanceColors.secondaryText)
-                        }
-                    }
-                    .disabled(true)
-
-                    Text("These optional features are planned for a future update.")
-                        .font(GlanceFonts.caption)
-                        .foregroundStyle(GlanceColors.secondaryText)
-                        .listRowBackground(Color.clear)
-                } header: {
-                    Text("Optional features")
-                } footer: {
-                    Text("All optional features are off by default. Nothing will nag you.")
-                }
-
-                // MARK: Your data
-                Section("Your data") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Everything lives privately in your own iCloud account — not on any developer server. Only you can see it.")
-                            .font(GlanceFonts.caption)
-                            .foregroundStyle(GlanceColors.secondaryText)
-                    }
-                    .listRowBackground(Color.clear)
-
-                    Button("Export backup…", action: exportBackup)
-                        .font(GlanceFonts.body)
-                }
-
-                // MARK: About
-                Section("About") {
-                    LabeledContent("Version", value: Bundle.main.appVersionString)
-                    Link("Help & feedback", destination: URL(string: "https://example.com")!)
-                }
+                appearanceSection
+                optionalFeaturesSection
+                dataSection
+                aboutSection
             }
-            .navigationTitle("Settings")
+            .scrollContentBackground(.hidden)
+            .paperBackground(palette)
+            .paperBars(palette)
+            .textCase(nil)   // section labels in sentence case (no ALL CAPS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                ToolbarItem(placement: .principal) {
+                    Text("Settings").font(fonts.font(.screenTitle)).foregroundStyle(palette.ink)
                 }
             }
-            .preferredColorScheme(appearance.colorScheme)
         }
     }
 
-    private func exportBackup() {
-        // TODO: Serialize themes to JSON and present share sheet
+    // MARK: Sections
+
+    private var appearanceSection: some View {
+        Section {
+            Picker("Look", selection: $appearance) {
+                ForEach(AppAppearance.allCases) { Text($0.label).tag($0) }
+            }
+            Picker("Title style", selection: $fontThemeID) {
+                ForEach(FontThemeID.allCases, id: \.self) { Text(FontThemes.theme($0).displayName).tag($0) }
+            }
+        } header: {
+            Text("Appearance")
+        } footer: {
+            Text("Text size follows your iPhone's setting (Settings, Display & Brightness, Text Size).")
+        }
+        .listRowBackground(palette.card)
+    }
+
+    private var optionalFeaturesSection: some View {
+        Section {
+            plannedToggle("\"You are here\" marker", detail: "Gently highlights your current step.")
+            plannedToggle("Gentle reminders", detail: "Optional nudge at a time you choose.")
+        } header: {
+            Text("Optional features")
+        } footer: {
+            Text("Planned for a future update. Everything optional is off by default, so nothing will nag you.")
+        }
+        .listRowBackground(palette.card)
+    }
+
+    private var dataSection: some View {
+        Section {
+            Text("Everything stays private on your device and in your own iCloud. No developer server sees it.")
+                .font(fonts.font(.caption))
+                .foregroundStyle(palette.ink2)
+        } header: {
+            Text("Your data")
+        }
+        .listRowBackground(palette.card)
+    }
+
+    private var aboutSection: some View {
+        Section("About") {
+            LabeledContent("Version", value: Bundle.main.appVersionString)
+        }
+        .listRowBackground(palette.card)
+    }
+
+    /// A disabled placeholder toggle with a one-line explanation.
+    /// - Parameters:
+    ///   - title: the feature name.
+    ///   - detail: what it would do.
+    private func plannedToggle(_ title: String, detail: String) -> some View {
+        Toggle(isOn: .constant(false)) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(fonts.font(.rowBody)).foregroundStyle(palette.ink)
+                Text(detail).font(fonts.font(.caption)).foregroundStyle(palette.ink2)
+            }
+        }
+        .disabled(true)
     }
 }
 
-// MARK: - Supporting enums
-
+// MARK: - AppAppearance
+/// Paper (light), chalkboard (dark), or follow the system.
 enum AppAppearance: String, CaseIterable, Identifiable {
     case system, light, dark, highContrast
     var id: String { rawValue }
+
     var label: String {
         switch self {
-        case .system: return "System default"
-        case .light: return "Light"
-        case .dark: return "Dark"
+        case .system: return "Match iPhone"
+        case .light: return "Paper (light)"
+        case .dark: return "Chalkboard (dark)"
         case .highContrast: return "High contrast"
         }
     }
+
     var colorScheme: ColorScheme? {
         switch self {
         case .system: return nil
@@ -125,23 +119,12 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     }
 }
 
-enum FontChoice: String, CaseIterable, Identifiable {
-    case system, atkinsonHyperlegible, lexend
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .system: return "System (San Francisco)"
-        case .atkinsonHyperlegible: return "Atkinson Hyperlegible"
-        case .lexend: return "Lexend"
-        }
-    }
-}
-
 // MARK: - Bundle helper
 extension Bundle {
+    /// "1.0 (1)" style version string for the About row.
     var appVersionString: String {
-        let version = infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
-        let build   = infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        let version = infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build   = infoDictionary?["CFBundleVersion"] as? String ?? "?"
         return "\(version) (\(build))"
     }
 }

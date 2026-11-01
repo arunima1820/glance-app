@@ -40,13 +40,15 @@ struct GlanceLockScreenWidgetView: View {
                 rectangularView(theme: theme)
             }
         } else {
-            Text("Glance").font(.caption)
+            Text("Nothing to do right now!")
+                .font(.caption)
+                .widgetURL(URL(string: "\(GlanceLink.scheme)://open"))
         }
     }
 
     private func rectangularView(theme: ThemeSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Label(theme.name, systemImage: "list.bullet")
+            Label(theme.name, systemImage: ThemeIcons.symbolName(for: theme.iconToken ?? ThemeIcons.default))
                 .font(.caption.weight(.semibold))
                 .lineLimit(1)
             if let first = theme.steps.first {
@@ -57,23 +59,20 @@ struct GlanceLockScreenWidgetView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .widgetURL(URL(string: "glance://theme/\(theme.id.uuidString)"))
+        .widgetURL(GlanceLink.theme(theme.id))
         .accessibilityLabel("\(theme.name). \(theme.steps.first?.text ?? "")")
     }
 
     private func inlineView(theme: ThemeSnapshot) -> some View {
-        Label {
-            Text(theme.steps.first?.text ?? theme.name)
-        } icon: {
-            Text(theme.iconEmoji)
-        }
-        .widgetURL(URL(string: "glance://theme/\(theme.id.uuidString)"))
+        Label(theme.steps.first?.text ?? theme.name,
+              systemImage: ThemeIcons.symbolName(for: theme.iconToken ?? ThemeIcons.default))
+        .widgetURL(GlanceLink.theme(theme.id))
     }
 
     private func circularView(theme: ThemeSnapshot) -> some View {
-        Text(theme.iconEmoji)
-            .font(.system(size: 28))
-            .widgetURL(URL(string: "glance://theme/\(theme.id.uuidString)"))
+        Image(systemName: ThemeIcons.symbolName(for: theme.iconToken ?? ThemeIcons.default))
+            .font(.system(size: 22, weight: .semibold))
+            .widgetURL(GlanceLink.theme(theme.id))
             .accessibilityLabel(theme.name)
     }
 }

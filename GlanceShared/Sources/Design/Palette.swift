@@ -9,7 +9,8 @@ struct Palette: Sendable, Equatable {
     let ink: Color          // primary text & borders
     let ink2: Color         // secondary text
     let marker: Color       // accent
-    let markerDeep: Color   // primary-button fill (white text sits on this)
+    let markerDeep: Color   // primary-button fill
+    let onMarker: Color     // text/glyphs on a markerDeep fill (AA contrast in both modes)
     let avocado: Color      // secondary accent / magnets
     let mustard: Color      // highlight / washi tape
     let sky: Color          // accent
@@ -57,6 +58,7 @@ enum Palettes {
             ink2:       Color(hex: "#726A58"),
             marker:     Color(hex: "#C65D3B"),
             markerDeep: Color(hex: "#B14A2C"),
+            onMarker:   Color(hex: "#FFFFFF"),
             avocado:    Color(hex: "#6B7B3A"),
             mustard:    Color(hex: "#D9A441"),
             sky:        Color(hex: "#5E86A3"),
@@ -69,6 +71,7 @@ enum Palettes {
             ink2:       Color(hex: "#A9B0A0"),
             marker:     Color(hex: "#E88A6F"),
             markerDeep: Color(hex: "#E88A6F"),
+            onMarker:   Color(hex: "#243029"),   // chalkboard ink: white on this coral fails AA
             avocado:    Color(hex: "#A7C58A"),
             mustard:    Color(hex: "#E6C878"),
             sky:        Color(hex: "#9BC2D6"),

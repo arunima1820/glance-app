@@ -1,54 +1,53 @@
 import SwiftUI
 
-// MARK: - OnboardingView  (Screen shown on very first launch)
-/// One-screen, skippable intro.
-/// Message: "Glance holds tiny lists you look at. There's nothing to check off."
+// MARK: - OnboardingView  (shown on very first launch)
+/// One-screen, skippable intro on the paper surface.
+/// Message: tiny lists you look at; checking things off is optional.
 struct OnboardingView: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.fonts) private var fonts
     let onDismiss: () -> Void
 
     var body: some View {
-        ZStack {
-            GlanceColors.background.ignoresSafeArea()
-
-            VStack(spacing: 40) {
-                Spacer()
-
-                Text("👀")
-                    .font(.system(size: 72))
-                    .accessibilityHidden(true)
-
-                VStack(spacing: 16) {
-                    Text("Glance holds tiny lists\nyou look at.")
-                        .font(GlanceFonts.title)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(GlanceColors.primaryText)
-
-                    Text("There's nothing to check off.")
-                        .font(GlanceFonts.body)
-                        .foregroundStyle(GlanceColors.secondaryText)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.horizontal, 32)
-
-                Spacer()
-
-                Button(action: onDismiss) {
-                    Text("Get started")
-                        .font(GlanceFonts.label)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 18)
-                }
-                .buttonStyle(GlancePrimaryButtonStyle())
-                .padding(.horizontal, 32)
-
-                Button(action: onDismiss) {
-                    Text("Skip")
-                        .font(GlanceFonts.caption)
-                        .foregroundStyle(GlanceColors.secondaryText)
-                }
-                .padding(.bottom, 24)
+        VStack(spacing: 36) {
+            Spacer()
+            Image(systemName: "list.bullet.clipboard")
+                .font(.system(size: 64, weight: .regular))
+                .foregroundStyle(palette.marker)
+                .accessibilityHidden(true)
+            VStack(spacing: 14) {
+                Text("\(AppInfo.displayName) holds tiny lists you look at.")
+                    .font(fonts.font(.screenTitle))
+                    .foregroundStyle(palette.ink)
+                Text("Cross things off if you like. Nothing is ever overdue.")
+                    .font(fonts.font(.rowBody))
+                    .foregroundStyle(palette.ink2)
             }
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 32)
+            Spacer()
+            startButton
+            Button("Skip", action: onDismiss)
+                .font(fonts.font(.caption))
+                .foregroundStyle(palette.ink2)
+                .padding(.bottom, 24)
         }
-        .accessibilityElement(children: .contain)
+        .frame(maxWidth: .infinity)
+        .paperBackground(palette)
+    }
+
+    /// The one sticker-styled primary action on this screen.
+    private var startButton: some View {
+        Button(action: onDismiss) {
+            Text("Get started")
+                .font(fonts.font(.button))
+                .foregroundStyle(palette.onMarker)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background(palette.markerDeep, in: RoundedRectangle(cornerRadius: 10))
+                .stickerStyle(palette)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 32)
     }
 }

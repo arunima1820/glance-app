@@ -3,11 +3,9 @@ import SwiftUI
 import AppIntents
 
 // MARK: - GlanceHomeWidget
-/// Home-screen widget in three sizes (small, medium, large).
-/// Medium + large: theme chips across the top; steps of selected theme below.
-/// Small: one theme's steps, tapping opens the app.
-///
-/// Tap-to-switch chips use AppIntents (iOS 17+) — the key interactive widget feature.
+/// Home-screen widget in three sizes. Shows one list (chosen by `WidgetSelection`: auto-pin,
+/// the user's tile pin, or the first unfinished list); large adds a Food column when there
+/// is food. Display-only: tapping opens that list in the app.
 struct GlanceHomeWidget: Widget {
     let kind = "GlanceHomeWidget"
 
@@ -18,7 +16,7 @@ struct GlanceHomeWidget: Widget {
             provider: GlanceTimelineProvider()
         ) { entry in
             GlanceHomeWidgetView(entry: entry)
-                .containerBackground(GlanceWidgetColors.background, for: .widget)
+                .containerBackground(for: .widget) { WidgetBackground() }
         }
         .configurationDisplayName("Glance")
         .description("See your tiny list at a glance.")
@@ -61,22 +59,54 @@ struct GlanceTimelineProvider: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: SelectThemeIntent, in context: Context) async -> GlanceEntry {
-        GlanceEntry(date: Date(), themes: Self.loadThemes(), selectedThemeID: configuration.selectedThemeID)
+        Self.makeEntry(configuration)
     }
 
+    /// Now, plus an entry at each of the next 8 midnights, so finished lists reappear (and
+    /// weekly ones auto-pin) on the day they repeat even if the app isn't opened.
     func timeline(for configuration: SelectThemeIntent, in context: Context) async -> Timeline<GlanceEntry> {
-        let entry = GlanceEntry(date: Date(), themes: Self.loadThemes(), selectedThemeID: configuration.selectedThemeID)
-        return Timeline(entries: [entry], policy: .never)
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let midnights = (1...8).compactMap { calendar.date(byAdding: .day, value: $0, to: today) }
+        let entries = ([Date()] + midnights).map { Self.makeEntry(configuration, at: $0) }
+        return Timeline(entries: entries, policy: .atEnd)
     }
 
-    /// Live data from App Group bridge; falls back to placeholders in dev (no real App Group).
+    /// The entry for one moment: only lists not yet finished, and the one to show.
+    private static func makeEntry(_ configuration: SelectThemeIntent, at date: Date = Date()) -> GlanceEntry {
+        let visible = WidgetSelection.visible(loadThemes(), now: date)
+        let selected = WidgetSelection.selectedID(visible: visible, pin: WidgetDataBridge.pin,
+                                                  configured: configuration.selectedThemeID, now: date)
+        return GlanceEntry(date: date, themes: visible, selectedThemeID: selected?.uuidString,
+                           food: WidgetDataBridge.readFood())
+    }
+
+    /// Live data from the App Group. Placeholders only if the app has never written a
+    /// snapshot; an empty list means "no lists", and the widget says so.
     private static func loadThemes() -> [ThemeSnapshot] {
-        let live = WidgetDataBridge.readSnapshot()
-        return live.isEmpty ? WidgetPlaceholders.themes : live
+        WidgetDataBridge.readSnapshotIfWritten() ?? WidgetPlaceholders.themes
     }
 }
 
 // MARK: - Widget views
+// Display-only by design: no check-off here. Taps open the app (glance:// URLs).
+
+/// Resolves the shared palette + font theme for the widget's current appearance.
+struct WidgetStyle {
+    let palette: Palette
+    let fonts: FontTheme
+
+    init(_ scheme: ColorScheme) {
+        palette = DesignConfig.shared.palette(for: scheme)
+        fonts = FontThemes.theme(WidgetDataBridge.fontThemeID)   // Settings → Title style
+    }
+}
+
+/// Paper / chalkboard behind the widget.
+struct WidgetBackground: View {
+    @Environment(\.colorScheme) private var scheme
+    var body: some View { WidgetStyle(scheme).palette.paper }
+}
 
 struct GlanceHomeWidgetView: View {
     @Environment(\.widgetFamily) private var family
@@ -86,160 +116,270 @@ struct GlanceHomeWidgetView: View {
         switch family {
         case .systemSmall:
             SmallWidgetView(entry: entry)
-        case .systemMedium, .systemLarge:
-            MediumLargeWidgetView(entry: entry)
         default:
-            SmallWidgetView(entry: entry)
+            MediumLargeWidgetView(entry: entry)
+        }
+    }
+}
+
+// MARK: Step list (shared by all sizes)
+/// Small step lines (11pt rounded, one line each) with a marker-dot bullet, separated by
+/// dashed hairline dividers. Done steps get the app's checkmark + strikethrough and sit
+/// at the bottom (widget only).
+struct WidgetStepList: View {
+    @Environment(\.colorScheme) private var scheme
+    let theme: ThemeSnapshot
+    let date: Date
+    let limit: Int
+
+    var body: some View {
+        let style = WidgetStyle(scheme)
+        let rows = WidgetSelection.rows(for: theme, now: date)
+        let shown = Array(rows.prefix(limit))
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(shown.enumerated()), id: \.element.id) { index, row in
+                if index > 0 { WidgetDashedDivider(color: style.palette.hairline) }
+                WidgetStepRow(row: row, style: style)
+            }
+            if rows.count > limit {
+                Text("+\(rows.count - limit) more")
+                    .font(style.fonts.font(.widgetBody))
+                    .foregroundStyle(style.palette.ink2)
+                    .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// One widget line: dot + text, or (done) checkmark + struck-through text.
+struct WidgetStepRow: View {
+    let row: WidgetSelection.Row
+    let style: WidgetStyle
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if row.isDone {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(style.palette.marker)
+                    .frame(width: 8)
+            } else {
+                Circle().fill(style.palette.marker).frame(width: 4, height: 4).frame(width: 8)
+            }
+            Text(row.step.text)
+                .font(style.fonts.font(.widgetBody))
+                .strikethrough(row.isDone, color: style.palette.ink2)
+                .foregroundStyle(row.isDone ? style.palette.ink2 : style.palette.ink)
+                .lineLimit(1)
+        }
+        .padding(.vertical, 2.5)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(row.isDone ? "done" : "")
+    }
+}
+
+/// The app's dashed hairline row divider, sized for the widget.
+struct WidgetDashedDivider: View {
+    let color: Color
+
+    var body: some View {
+        Line()
+            .stroke(color, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            .frame(height: 1)
+    }
+
+    /// A horizontal line across the middle of its rect.
+    private struct Line: Shape {
+        func path(in rect: CGRect) -> Path {
+            Path { $0.move(to: CGPoint(x: rect.minX, y: rect.midY)); $0.addLine(to: CGPoint(x: rect.maxX, y: rect.midY)) }
         }
     }
 }
 
 // MARK: Small widget
 struct SmallWidgetView: View {
+    @Environment(\.colorScheme) private var scheme
     let entry: GlanceEntry
 
     var body: some View {
+        let style = WidgetStyle(scheme)
         Group {
             if let theme = entry.selectedTheme {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Text(theme.iconEmoji)
-                            .font(.system(size: 20))
-                        Text(theme.name)
-                            .font(.headline)
-                            .lineLimit(1)
-                            .foregroundStyle(GlanceWidgetColors.primaryText)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(theme.iconEmoji) \(theme.name)")
-
-                    ForEach(theme.steps.prefix(4)) { step in
-                        Text(step.text)
-                            .font(.subheadline)
-                            .foregroundStyle(GlanceWidgetColors.primaryText)
-                            .lineLimit(1)
-                    }
+                VStack(alignment: .leading, spacing: 5) {
+                    WidgetThemeTitle(theme: theme)
+                    WidgetStepList(theme: theme, date: entry.date, limit: 6)
                     Spacer(minLength: 0)
                 }
-                .padding(14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .widgetURL(GlanceLink.theme(theme.id))
             } else {
-                Text("No themes yet.\nOpen Glance to add one.")
-                    .font(.caption)
-                    .foregroundStyle(GlanceWidgetColors.secondaryText)
-                    .multilineTextAlignment(.center)
-                    .padding()
+                WidgetNothingToDo()
             }
         }
-        .widgetURL(URL(string: "glance://open"))
+    }
+}
+
+/// Icon + name header for one list.
+struct WidgetThemeTitle: View {
+    @Environment(\.colorScheme) private var scheme
+    let theme: ThemeSnapshot
+
+    var body: some View {
+        let style = WidgetStyle(scheme)
+        HStack(spacing: 4) {
+            Image(systemName: ThemeIcons.symbolName(for: theme.iconToken ?? ThemeIcons.default))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(style.palette.marker)
+                .accessibilityHidden(true)
+            Text(theme.name)
+                .font(style.fonts.font(.widgetTitle))
+                .foregroundStyle(style.palette.ink)
+                .lineLimit(1)
+        }
+    }
+}
+
+// MARK: Empty state
+/// Shown when there are no lists at all.
+struct WidgetNothingToDo: View {
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let style = WidgetStyle(scheme)
+        VStack(spacing: 4) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(style.palette.mustard)
+                .accessibilityHidden(true)
+            Text("Nothing to do right now!")
+                .font(style.fonts.font(.widgetTitle))
+                .foregroundStyle(style.palette.ink)
+            Text("Enjoy the quiet.")
+                .font(style.fonts.font(.widgetBody))
+                .foregroundStyle(style.palette.ink2)
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .widgetURL(URL(string: "\(GlanceLink.scheme)://open"))
     }
 }
 
 // MARK: Medium / Large widget
+/// Header shows only the list being shown (other lists' names stay private).
+/// Large: tasks on the left, food on the right, but only when there is food to show.
 struct MediumLargeWidgetView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.colorScheme) private var scheme
     let entry: GlanceEntry
 
+    private var showsFood: Bool { family == .systemLarge && !entry.food.isEmpty }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Theme chip row
-            if entry.themes.count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(entry.themes) { theme in
-                            Button(intent: SelectThemeIntent(selectedThemeID: theme.id.uuidString)) {
-                                ThemeChipView(
-                                    theme: theme,
-                                    isSelected: entry.selectedTheme?.id == theme.id
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+        if entry.selectedTheme == nil && !showsFood {
+            WidgetNothingToDo()
+        } else {
+            HStack(alignment: .top, spacing: 10) {
+                tasksColumn
+                if showsFood {
+                    WidgetVerticalDivider(color: WidgetStyle(scheme).palette.ink2.opacity(0.4))
+                    WidgetFoodSection(items: entry.food)
                 }
-                .frame(height: 40)
-                .accessibilityLabel("Themes")
             }
+        }
+    }
 
-            // Steps for selected theme
+    @ViewBuilder private var tasksColumn: some View {
+        VStack(alignment: .leading, spacing: 4) {
             if let theme = entry.selectedTheme {
-                let maxSteps = family == .systemLarge ? 8 : 4
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(theme.steps.prefix(maxSteps)) { step in
-                        HStack(spacing: 8) {
-                            if let icon = step.iconEmoji {
-                                Text(icon).font(.system(size: 16))
-                                    .accessibilityHidden(true)
-                            }
-                            Text(step.text)
-                                .font(.subheadline)
-                                .foregroundStyle(GlanceWidgetColors.primaryText)
-                                .lineLimit(1)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .widgetURL(URL(string: "glance://theme/\(theme.id.uuidString)"))
+                WidgetThemeTitle(theme: theme)
+                WidgetStepList(theme: theme, date: entry.date, limit: family == .systemLarge ? 16 : 5)
+                    .widgetURL(GlanceLink.theme(theme.id))
+            } else {
+                WidgetNothingToDo()
             }
-
             Spacer(minLength: 0)
         }
-        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-// MARK: Theme chip
-struct ThemeChipView: View {
-    let theme: ThemeSnapshot
-    let isSelected: Bool
-
-    private var palette: ThemePalette.Entry { ThemePalette.entry(for: theme.colorToken) }
+/// Dashed vertical rule between the tasks and food columns.
+struct WidgetVerticalDivider: View {
+    let color: Color
 
     var body: some View {
-        HStack(spacing: 4) {
-            Text(theme.iconEmoji).font(.system(size: 14))
-                .accessibilityHidden(true)
-            Text(theme.name)
-                .font(.caption.weight(isSelected ? .semibold : .regular))
-                .lineLimit(1)
+        VLine()
+            .stroke(color, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            .frame(width: 1)
+    }
+
+    /// A vertical line down the middle of its rect.
+    private struct VLine: Shape {
+        func path(in rect: CGRect) -> Path {
+            Path { $0.move(to: CGPoint(x: rect.midX, y: rect.minY)); $0.addLine(to: CGPoint(x: rect.midX, y: rect.maxY)) }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(isSelected ? palette.light : GlanceWidgetColors.chipBackground)
-        .clipShape(Capsule())
-        .overlay(
-            Capsule()
-                .stroke(isSelected ? palette.light.opacity(0) : GlanceWidgetColors.chipBorder, lineWidth: 1)
-        )
-        .foregroundStyle(GlanceWidgetColors.primaryText)
-        .accessibilityLabel("\(theme.name)\(isSelected ? ", selected" : "")")
     }
 }
 
-// MARK: - Widget colors (hardcoded — widgets run in their own bundle, no shared asset catalog)
-enum GlanceWidgetColors {
-    // Off-white in light mode, soft dark in dark mode
-    static let background = Color(light: Color(red: 0.976, green: 0.973, blue: 0.969),
-                                  dark:  Color(red: 0.110, green: 0.110, blue: 0.118))
-    // Near-black / near-white
-    static let primaryText = Color(light: Color(red: 0.118, green: 0.118, blue: 0.137),
-                                   dark:  Color(red: 0.933, green: 0.933, blue: 0.941))
-    // Mid-grey
-    static let secondaryText = Color(light: Color(red: 0.435, green: 0.439, blue: 0.467),
-                                     dark:  Color(red: 0.557, green: 0.557, blue: 0.576))
-    // Card surface
-    static let chipBackground = Color(light: .white,
-                                      dark:  Color(red: 0.173, green: 0.173, blue: 0.180))
-    static let chipBorder = Color.gray.opacity(0.2)
+// MARK: Food section (large widget)
+/// The groceries column: soonest-to-expire first, each with a freshness pill (text + color).
+struct WidgetFoodSection: View {
+    @Environment(\.colorScheme) private var scheme
+    let items: [FoodSnapshot]
+
+    var body: some View {
+        let style = WidgetStyle(scheme)
+        let sorted = items.sorted { $0.useByDate < $1.useByDate }.prefix(12)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: "refrigerator")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(style.palette.avocado)
+                    .accessibilityHidden(true)
+                Text("Food")
+                    .font(style.fonts.font(.widgetTitle))
+                    .foregroundStyle(style.palette.ink)
+            }
+            ForEach(Array(sorted.enumerated()), id: \.element.id) { index, item in
+                if index > 0 { WidgetDashedDivider(color: style.palette.hairline) }
+                WidgetFoodRow(item: item)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 }
 
-private extension Color {
-    /// Creates a color that adapts between light and dark mode without an asset catalog.
-    init(light: Color, dark: Color) {
-        self.init(UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(dark)
-                : UIColor(light)
-        })
+/// One food line: name, then its freshness pill.
+struct WidgetFoodRow: View {
+    @Environment(\.colorScheme) private var scheme
+    let item: FoodSnapshot
+
+    var body: some View {
+        let style = WidgetStyle(scheme)
+        let fresh = Freshness.of(useBy: item.useByDate)
+        HStack(spacing: 4) {
+            Text(item.name)
+                .font(style.fonts.font(.widgetBody))
+                .foregroundStyle(style.palette.ink)
+                .lineLimit(1)
+            Spacer(minLength: 2)
+            Text(fresh.label)
+                .font(.system(size: 8.5, weight: .heavy, design: .rounded))
+                .foregroundStyle(Palettes.fridgeMarker.light.ink)   // dark ink on every pill (contrast)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(pillColor(fresh, style.palette), in: Capsule())
+        }
+        .padding(.vertical, 2.5)
+    }
+
+    private func pillColor(_ fresh: Freshness, _ palette: Palette) -> Color {
+        switch fresh {
+        case .expired: return palette.marker.opacity(0.45)
+        case .days: return palette.mustard.opacity(0.6)
+        case .weeks: return palette.avocado.opacity(0.45)
+        }
     }
 }

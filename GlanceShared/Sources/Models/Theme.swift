@@ -27,7 +27,7 @@ final class Theme: Identifiable {
     var id: UUID
     var name: String
     var colorToken: String   // key into ThemePalette, e.g. "sage", "lavender"
-    var iconToken: String    // key into ThemeIcons (SF Symbol), e.g. "meds", "leave"
+    var iconToken: String = ThemeIcons.default  // key into ThemeIcons (SF Symbol); default keeps old stores migratable
     var iconEmoji: String    // legacy, still read by the widget snapshot until it migrates
     var sortOrder: Int
     var createdAt: Date
@@ -37,6 +37,12 @@ final class Theme: Identifiable {
     var completionStyle: ThemeCompletionStyle = ThemeCompletionStyle.sweep
     var lastSweptAt: Date? = nil          // when the list was last cleared as a whole
     var categories: [GlanceCategory] = [] // plain side of GlanceCategory.themes many-to-many
+
+    // Repeats (stored as primitives so SwiftData migrates them; see `recurrence`).
+    var repeatKind: String = Recurrence.Kind.daily.rawValue
+    var repeatWeekdays: [Int] = []
+    var repeatDayOfMonth: Int = 1
+    var repeatInterval: Int = 2
 
     @Relationship(deleteRule: .cascade, inverse: \Step.theme)
     var steps: [Step]
@@ -61,6 +67,22 @@ final class Theme: Identifiable {
         self.createdAt = Date()
         self.updatedAt = Date()
         self.steps = steps
+    }
+
+    /// How often this list wipes clean (daily by default; `.oneTime` never resets).
+    /// The cycle for "every N days" counts from the list's creation day.
+    var recurrence: Recurrence {
+        get {
+            Recurrence(kind: Recurrence.Kind(rawValue: repeatKind) ?? .daily,
+                       weekdays: Set(repeatWeekdays), dayOfMonth: repeatDayOfMonth,
+                       interval: repeatInterval, anchor: createdAt)
+        }
+        set {
+            repeatKind = newValue.kind.rawValue
+            repeatWeekdays = newValue.weekdays.sorted()
+            repeatDayOfMonth = newValue.dayOfMonth
+            repeatInterval = newValue.interval
+        }
     }
 
     /// Returns steps sorted by their sortOrder.

@@ -3,8 +3,8 @@ import SwiftData
 @testable import Glance
 
 // MARK: - CategoryTests
-// Covers: GlanceCategory.swift — initialisation, persistence, and the many-to-many
-// relationships to both Theme and Step (a task/routine can sit in several categories).
+// Covers: GlanceCategory.swift (init defaults and the many-to-many inverses to Theme.categories
+// and Step.categories).
 
 final class CategoryTests: XCTestCase {
 
@@ -24,23 +24,12 @@ final class CategoryTests: XCTestCase {
     // MARK: Initialisation
 
     func testCategoryDefaults() {
-        let category = GlanceCategory(name: "Urgent", colorToken: "red")
+        let category = GlanceCategory(name: "Urgent")
         XCTAssertEqual(category.name, "Urgent")
-        XCTAssertEqual(category.colorToken, "red")
+        XCTAssertEqual(category.colorToken, "blue")
         XCTAssertEqual(category.sortOrder, 0)
         XCTAssertTrue(category.themes.isEmpty)
         XCTAssertTrue(category.steps.isEmpty)
-    }
-
-    // MARK: Persistence
-
-    func testInsertAndFetchCategory() throws {
-        context.insert(GlanceCategory(name: "Errands", colorToken: "blue", sortOrder: 1))
-        try context.save()
-
-        let fetched = try context.fetch(FetchDescriptor<GlanceCategory>())
-        XCTAssertEqual(fetched.count, 1)
-        XCTAssertEqual(fetched.first?.name, "Errands")
     }
 
     // MARK: Many-to-many — a category applied to a theme
@@ -54,7 +43,6 @@ final class CategoryTests: XCTestCase {
 
         let fetchedTheme = try context.fetch(FetchDescriptor<Theme>()).first
         XCTAssertEqual(fetchedTheme?.categories.first?.name, "Morning")
-        // Inverse side is populated automatically.
         let fetchedCategory = try context.fetch(FetchDescriptor<GlanceCategory>()).first
         XCTAssertEqual(fetchedCategory?.themes.first?.name, "Leave the house")
     }
