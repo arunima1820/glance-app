@@ -6,7 +6,7 @@ import SwiftData
 /// CloudKit sync is disabled during local development — re-enable once your
 /// Apple Developer account is approved and YOUR_TEAM placeholders are filled in.
 enum GlanceStore {
-    static let appGroupIdentifier = "group.com.glance.local"
+    static let appGroupIdentifier = "group.com.ruminate.glance"
 
     static func makeContainer(inMemory: Bool = false) throws -> ModelContainer {
         // GlanceCategory joins Theme and Step in the schema (many-to-many grouping).

@@ -1,10 +1,10 @@
 # project.yml — XcodeGen spec for Glance
-# YOUR_TEAM / com.YOUR_TEAM replaced with "local" placeholders for simulator dev.
-# Re-run xcodegen generate after your Apple Developer account is approved.
+# Signed with team HSQ5A6CT2U (Ruminate). IDs match what is registered with Apple:
+# app com.ruminate.glance, widget com.ruminate.glance.widget, group group.com.ruminate.glance.
 
 name: Glance
 options:
-  bundleIdPrefix: com.glance.local
+  bundleIdPrefix: com.ruminate
   deploymentTarget:
     iOS: "17.0"
   xcodeVersion: "16.0"
@@ -16,9 +16,8 @@ settings:
     SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
-    DEVELOPMENT_TEAM: ""
-    CODE_SIGN_IDENTITY: "-"
-    CODE_SIGNING_REQUIRED: NO
+    DEVELOPMENT_TEAM: HSQ5A6CT2U
+    CODE_SIGN_STYLE: Automatic
 
 # MARK: - Targets
 
@@ -38,7 +37,7 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.glance.local.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.ruminate.glance
         INFOPLIST_FILE: Glance/Resources/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSET_CATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: NO
@@ -46,7 +45,7 @@ targets:
       path: Glance/Resources/Glance.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.glance.local
+          - group.com.ruminate.glance
     dependencies:
       - target: GlanceWidgetExtension
     scheme:
@@ -68,13 +67,13 @@ targets:
       - path: Glance/Sources/Assets.xcassets
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.glance.local.app.widget
+        PRODUCT_BUNDLE_IDENTIFIER: com.ruminate.glance.widget
         INFOPLIST_FILE: GlanceWidgetExtension/Info.plist
     entitlements:
       path: GlanceWidgetExtension/GlanceWidgetExtension.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.glance.local
+          - group.com.ruminate.glance
 
   # ─── Unit tests ────────────────────────────────────────────────────────────
   GlanceTests:
@@ -86,7 +85,7 @@ targets:
       - target: Glance
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.glance.local.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.ruminate.glance.tests
         INFOPLIST_FILE: GlanceTests/Info.plist
 
 # MARK: - Schemes

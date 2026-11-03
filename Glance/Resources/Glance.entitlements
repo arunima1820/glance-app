@@ -4,7 +4,7 @@
 <dict>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.glance.local</string>
+		<string>group.com.ruminate.glance</string>
 	</array>
 </dict>
 </plist>
