@@ -18,7 +18,7 @@ struct GlanceLockScreenWidget: Widget {
                 .containerBackground(.clear, for: .widget)
         }
         .configurationDisplayName("Glance (Lock Screen)")
-        .description("Your current theme's first step at a glance.")
+        .description("Your list's next step at a glance.")
         .supportedFamilies([.accessoryRectangular, .accessoryInline, .accessoryCircular])
     }
 }
@@ -42,8 +42,14 @@ struct GlanceLockScreenWidgetView: View {
         } else {
             Text("Nothing to do right now!")
                 .font(.caption)
-                .widgetURL(URL(string: "\(GlanceLink.scheme)://open"))
+                .widgetURL(GlanceLink.open)
         }
+    }
+
+    /// The first step not yet ticked (the home widget sinks ticked steps; this matches it).
+    /// - Parameter theme: the shown list.
+    private func nextStep(_ theme: ThemeSnapshot) -> StepSnapshot? {
+        WidgetSelection.rows(for: theme, now: entry.date).first { !$0.isDone }?.step
     }
 
     private func rectangularView(theme: ThemeSnapshot) -> some View {
@@ -51,8 +57,8 @@ struct GlanceLockScreenWidgetView: View {
             Label(theme.name, systemImage: ThemeIcons.symbolName(for: theme.iconToken ?? ThemeIcons.default))
                 .font(.caption.weight(.semibold))
                 .lineLimit(1)
-            if let first = theme.steps.first {
-                Text(first.text)
+            if let next = nextStep(theme) {
+                Text(next.text)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -60,11 +66,11 @@ struct GlanceLockScreenWidgetView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .widgetURL(GlanceLink.theme(theme.id))
-        .accessibilityLabel("\(theme.name). \(theme.steps.first?.text ?? "")")
+        .accessibilityLabel("\(theme.name). \(nextStep(theme)?.text ?? "")")
     }
 
     private func inlineView(theme: ThemeSnapshot) -> some View {
-        Label(theme.steps.first?.text ?? theme.name,
+        Label(nextStep(theme)?.text ?? theme.name,
               systemImage: ThemeIcons.symbolName(for: theme.iconToken ?? ThemeIcons.default))
         .widgetURL(GlanceLink.theme(theme.id))
     }

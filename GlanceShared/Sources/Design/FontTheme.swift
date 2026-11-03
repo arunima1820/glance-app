@@ -8,11 +8,11 @@ enum FontRole: Sendable, CaseIterable {
     case screenTitle   // main screen headings (Food, Settings, onboarding)
     case listTitle     // a list's own header on its Steps screen
     case rowLead       // the bold lead word of a list row
-    case rowBody       // list row detail text (~9pt baseline)
+    case rowBody       // list row detail text (callout, Dynamic Type)
     case cardTitle     // theme card (tile) name
     case caption       // sublines, hints
     case button        // primary action label
-    case widgetTitle   // widget theme name / chip label
+    case widgetTitle   // widget list / section name
     case widgetBody    // widget step text: deliberately small and tight
 }
 

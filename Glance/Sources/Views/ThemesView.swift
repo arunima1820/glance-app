@@ -12,6 +12,9 @@ struct ThemesView: View {
     @Query(sort: \Theme.sortOrder) private var themes: [Theme]
 
     @State private var showingAddTheme = false
+    /// Lists mid-delete (popping off screen): hidden everywhere so they can't be reopened.
+    @State private var pendingDeletes: Set<UUID> = []
+    @Environment(\.glanceNow) private var now
     @State private var path: [UUID] = []
     /// Set by a widget deep link; this view opens that list, then clears it.
     @Binding var linkedThemeID: UUID?
@@ -27,14 +30,14 @@ struct ThemesView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                if themes.isEmpty { emptyBoard } else { grid }
+                if shownThemes.isEmpty { emptyBoard } else { grid }
             }
             .paperBackground(palette)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
             .paperBars(palette)
             .navigationDestination(for: UUID.self) { id in
-                if let theme = themes.first(where: { $0.id == id }) {
+                if let theme = shownThemes.first(where: { $0.id == id }) {
                     StepsView(theme: theme, onDelete: { delete(theme) })
                 }
             }
@@ -50,11 +53,11 @@ struct ThemesView: View {
         ScrollView {
             pageHeader
             LazyVGrid(columns: columns, spacing: Metrics.l) {
-                ForEach(themes) { theme in
+                ForEach(shownThemes) { theme in
                     ZStack(alignment: .topTrailing) {
                         NavigationLink(value: theme.id) { ThemeCardView(theme: theme) }
                             .buttonStyle(.plain)
-                        WidgetPinButton(isPinned: theme.id == widgetThemeID) { togglePin(theme) }
+                        WidgetPinButton(isPinned: theme.id == pinnedThemeID) { togglePin(theme) }
                     }
                 }
                 Button { showingAddTheme = true } label: { DashedTile(title: "New list") }
@@ -100,13 +103,19 @@ struct ThemesView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// The list the widget is showing right now, by the same rules the widget uses
-    /// (finished lists hidden; weekly/monthly lists auto-pin when they come round).
-    private var widgetThemeID: UUID? {
-        _ = (pinnedID, pinnedAt)   // re-evaluate when the pin changes
-        let now = Date()
-        let visible = WidgetSelection.visible(themes.map { WidgetDataBridge.snapshot(of: $0, now: now) }, now: now)
-        return WidgetSelection.selectedID(visible: visible, pin: WidgetDataBridge.pin, configured: nil, now: now)
+    /// Every list except ones being deleted.
+    private var shownThemes: [Theme] {
+        themes.filter { !pendingDeletes.contains($0.id) }
+    }
+
+    /// The list pinned to the widget on purpose (user pin or auto-pin), by the widget's own
+    /// rules. nil when the widget is just showing its fallback, so no tile looks pinned then.
+    private var pinnedThemeID: UUID? {
+        _ = (pinnedID, pinnedAt, now)   // re-evaluate when the pin or the day changes
+        let moment = Date()
+        let visible = WidgetSelection.visible(shownThemes.map { WidgetDataBridge.snapshot(of: $0, now: moment) },
+                                              now: moment)
+        return WidgetSelection.explicitID(visible: visible, pin: WidgetDataBridge.pin, now: moment)
     }
 
     @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
@@ -118,17 +127,17 @@ struct ThemesView: View {
 
     // MARK: Helpers
 
-    /// One tap: pin this list to the widget, or unpin it if it's the one showing.
+    /// One tap: pin this list to the widget, or unpin it if it's the pinned one.
     /// - Parameter theme: the tapped list.
     private func togglePin(_ theme: Theme) {
-        WidgetDataBridge.pin(theme.id == widgetThemeID ? nil : theme.id)
+        WidgetDataBridge.pin(theme.id == pinnedThemeID ? nil : theme.id)
     }
 
     /// Opens the list a widget tap pointed at (replacing whatever was open).
     private func openLinkedTheme() {
         guard let id = linkedThemeID else { return }
         linkedThemeID = nil
-        guard themes.contains(where: { $0.id == id }) else { return }
+        guard shownThemes.contains(where: { $0.id == id }) else { return }
         path = [id]
     }
 
@@ -136,13 +145,15 @@ struct ThemesView: View {
     /// closing screen never reads a deleted model. Clears the widget pin if it pointed here.
     /// - Parameter theme: the list to delete.
     private func delete(_ theme: Theme) {
-        path = []
         let id = theme.id
+        pendingDeletes.insert(id)
+        path = []
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(450))
+            try? await Task.sleep(for: .milliseconds(450))   // let the pop animation finish
             if pinnedID == id.uuidString { WidgetDataBridge.pin(nil) }
             modelContext.delete(theme)
             try? modelContext.save()
+            pendingDeletes.remove(id)
             WidgetDataBridge.refresh(from: modelContext)
         }
     }
@@ -166,10 +177,11 @@ enum AppInfo {
 }
 
 // MARK: - ThemeCardView
-/// One routine as a floating paper tile: marker icon + Cabin Sketch title, step count, magnets.
+/// One routine as a floating paper tile: icon + cardTitle name, step count, category magnets.
 struct ThemeCardView: View {
     @Environment(\.palette) private var palette
     @Environment(\.fonts) private var fonts
+    @Environment(\.glanceNow) private var now
     let theme: Theme
 
     var body: some View {
@@ -209,14 +221,14 @@ struct ThemeCardView: View {
         }
     }
 
-    /// "4 steps", plus "· done, back Mon" for a finished repeating list (hidden on the widget).
+    /// "4 steps", plus "· done, back Tue" (or a date if further than a week) for a finished
+    /// repeating list (hidden on the widget meanwhile).
     private var stepCountLabel: String {
+        let moment = max(now, Date())
         let count = "\(theme.steps.count) step\(theme.steps.count == 1 ? "" : "s")"
-        guard theme.isListComplete() else { return count }
-        guard let next = theme.recurrence.nextStart(after: .now) else { return count + " · done" }
-        let back = Calendar.current.isDateInTomorrow(next)
-            ? "tomorrow" : next.formatted(.dateTime.weekday(.abbreviated))
-        return count + " · done, back " + back
+        guard theme.isListComplete(now: moment) else { return count }
+        guard let next = theme.recurrence.nextStart(after: moment) else { return count + " · done" }
+        return count + " · done, back " + Recurrence.dayLabel(next, now: moment)
     }
 }
 

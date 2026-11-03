@@ -3,8 +3,8 @@ import SwiftData
 
 // MARK: - Step
 /// One small action inside a Theme (e.g. "Grab keys") — a single "task".
-/// Completion is optional and supports two styles (see ThemeCompletionStyle); a step
-/// can also carry its own categories and accent color independent of its theme.
+/// Done-ness is a `completedAt` stamp that the list's `Recurrence` reads; a step can also
+/// carry its own categories and accent color independent of its theme.
 @Model
 final class Step: Identifiable {
     var id: UUID
@@ -15,7 +15,7 @@ final class Step: Identifiable {
     var updatedAt: Date
 
     // New in this version — defaults keep existing stored data migratable.
-    var completedAt: Date? = nil          // timestamp of completion (drives daily reset)
+    var completedAt: Date? = nil          // when ticked; the list's Recurrence decides if it still counts
     var colorToken: String? = nil         // optional own accent, separate from categories
     var categories: [GlanceCategory] = []       // plain side of GlanceCategory.steps many-to-many
 
@@ -60,5 +60,21 @@ enum StepText {
         }
         let detail = trimmed[gap...].trimmingCharacters(in: .whitespacesAndNewlines)
         return (String(trimmed[..<gap]), detail)
+    }
+}
+
+// MARK: - TextLimits
+/// Caps on user text, so a huge paste can't bloat the widget snapshot (the widget extension
+/// has a small memory budget and decodes the whole snapshot on every refresh).
+enum TextLimits {
+    static let name = 80
+    static let step = 200
+
+    /// Trims whitespace and cuts to `limit` characters.
+    /// - Parameters:
+    ///   - text: raw user input.
+    ///   - limit: maximum characters to keep.
+    static func clamp(_ text: String, to limit: Int) -> String {
+        String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
     }
 }

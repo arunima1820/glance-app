@@ -127,4 +127,12 @@ final class WidgetDataBridgeTests: XCTestCase {
                        date(2, 9))
         XCTAssertNil(WidgetDataBridge.snapshot(of: theme, now: date(3, 12), calendar: calendar).completedAt)
     }
+
+    func testSnapshotCapsVeryLongText() {
+        let theme = Theme(name: String(repeating: "n", count: 500),
+                          steps: [Step(text: String(repeating: "s", count: 5_000), sortOrder: 0)])
+        let snap = WidgetDataBridge.snapshot(of: theme, now: date(2), calendar: calendar)
+        XCTAssertEqual(snap.name.count, TextLimits.name)
+        XCTAssertEqual(snap.steps.first?.text.count, TextLimits.step)
+    }
 }

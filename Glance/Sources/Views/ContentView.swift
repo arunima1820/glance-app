@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import SwiftData
 
@@ -33,8 +34,11 @@ struct ContentView: View {
 struct RootTabView: View {
     @EnvironmentObject private var design: DesignConfig
     @Environment(\.palette) private var palette
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.modelContext) private var modelContext
     @State private var tab = RootTab.lists
     @State private var linkedThemeID: UUID?
+    @State private var now = Date()
 
     var body: some View {
         TabView(selection: $tab) {
@@ -51,7 +55,20 @@ struct RootTabView: View {
                 .tag(RootTab.settings)
         }
         .tint(palette.marker)
+        .environment(\.glanceNow, now)
         .onOpenURL(perform: open)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { refreshDay() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
+            refreshDay()
+        }
+    }
+
+    /// New day or back from the background: re-judge ticks and rewrite the widget snapshot.
+    private func refreshDay() {
+        now = Date()
+        WidgetDataBridge.refresh(from: modelContext)
     }
 
     /// Routes a deep link: any glance:// URL shows Lists; a theme link also opens that list.

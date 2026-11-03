@@ -3,7 +3,7 @@ import XCTest
 
 // MARK: - ThemeCompletionTests
 // Covers: ThemeCompletion.swift (Theme.isDone, isListComplete, allStepsDone, listCompletedAt,
-// toggle, sweepComplete, resetCompletion) on top of the Theme.recurrence schedule.
+// toggle, sweepComplete, resetCompletion, changeRecurrence) on top of the Theme.recurrence schedule.
 
 final class ThemeCompletionTests: XCTestCase {
 
@@ -163,5 +163,32 @@ final class ThemeCompletionTests: XCTestCase {
         theme.recurrence = Recurrence(kind: .oneTime)
         theme.toggle(step, now: date(2026, 11, 1, 8), calendar: calendar)
         XCTAssertEqual(theme.listCompletedAt(now: date(2027, 6, 1), calendar: calendar), date(2026, 11, 1, 8))
+    }
+
+    // MARK: Changing the repeat rule
+
+    func testSwitchingToOneTimeDoesNotReviveOldTicks() {
+        let (theme, steps) = twoStepTheme()
+        steps.forEach { $0.setComplete(true, now: date(2026, 11, 1, 9)) }   // done yesterday (daily)
+        theme.changeRecurrence(to: Recurrence(kind: .oneTime), now: date(2026, 11, 2), calendar: calendar)
+        XCTAssertTrue(steps.allSatisfy { $0.completedAt == nil })
+        XCTAssertFalse(theme.isListComplete(now: date(2026, 11, 2), calendar: calendar))
+    }
+
+    func testChangingRuleKeepsTicksThatStillCountAndRestartsCycle() {
+        let (theme, steps) = twoStepTheme()
+        steps[0].setComplete(true, now: date(2026, 11, 2, 8))               // today
+        let now = date(2026, 11, 2)
+        theme.changeRecurrence(to: Recurrence(kind: .weekly, weekdays: [2]), now: now, calendar: calendar)
+        XCTAssertEqual(steps[0].completedAt, date(2026, 11, 2, 8))
+        XCTAssertEqual(theme.repeatAnchor, now)
+    }
+
+    func testSameRuleIsANoOp() {
+        let (theme, steps) = twoStepTheme()
+        steps[0].setComplete(true, now: date(2026, 11, 1, 9))
+        theme.changeRecurrence(to: Recurrence(kind: .daily), now: date(2026, 11, 2), calendar: calendar)
+        XCTAssertNotNil(steps[0].completedAt)
+        XCTAssertNil(theme.repeatAnchor)
     }
 }

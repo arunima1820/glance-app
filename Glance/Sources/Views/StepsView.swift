@@ -11,6 +11,7 @@ struct StepsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.palette) private var palette
     @Environment(\.fonts) private var fonts
+    @Environment(\.glanceNow) private var now
     let theme: Theme
     /// Called when the user deletes this list from the Edit sheet; the parent pops back to
     /// the tiles and performs the delete.
@@ -90,7 +91,7 @@ struct StepsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityValue(isDone(step) ? "done" : "not done")
-        .accessibilityHint("Double-tap to \(isDone(step) ? "uncheck" : "check off")")
+        .accessibilityHint(isDone(step) ? "Unchecks this step" : "Checks off this step")
     }
 
     /// The row text: bold lead word, then plain detail. When done: struck through, led by
@@ -131,8 +132,8 @@ struct StepsView: View {
     // MARK: Sweep bar (whole-list completion)
 
     @ViewBuilder private var sweepBar: some View {
-        if !theme.steps.isEmpty {   // every list gets it, whatever its completion style
-            let done = theme.isListComplete()
+        if !theme.steps.isEmpty {
+            let done = theme.isListComplete(now: max(now, Date()))
             HStack {
                 Spacer()
                 Button { setSweep(complete: !done) } label: { SwooshLabel(done: done) }
@@ -171,7 +172,7 @@ struct StepsView: View {
     }
 
     private var footerHint: some View {
-        Text("Tap a step to cross it off. Everything resets tomorrow.")
+        Text(theme.recurrence.resetHint(now: max(now, Date())))
             .font(fonts.font(.caption))
             .foregroundStyle(palette.ink2)
     }
@@ -179,8 +180,9 @@ struct StepsView: View {
     // MARK: Actions
 
     /// Whether a step counts as done right now (resets per the list's repeat schedule).
+    /// Reads `now` (refreshed at midnight / on return) so rows re-render when the day changes.
     private func isDone(_ step: Step) -> Bool {
-        theme.isDone(step.completedAt)
+        theme.isDone(step.completedAt, now: max(now, Date()))
     }
 
     private func toggle(_ step: Step) {
@@ -220,7 +222,7 @@ struct StepsView: View {
 
     /// Saves the edited text (blank text keeps the old wording).
     private func commitEdit() {
-        let text = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = TextLimits.clamp(editText, to: TextLimits.step)
         if let step = editingStep, !text.isEmpty {
             step.text = text
             step.updatedAt = .now
@@ -244,7 +246,7 @@ struct StepsView: View {
 
     /// Appends the typed step, keeps the field focused for the next one, refreshes the widget.
     private func addStep() {
-        let text = newStepText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = TextLimits.clamp(newStepText, to: TextLimits.step)
         guard !text.isEmpty else { return }
         let nextOrder = (theme.steps.map(\.sortOrder).max() ?? -1) + 1
         theme.steps.append(Step(text: text, sortOrder: nextOrder))
@@ -268,7 +270,7 @@ struct StepsView: View {
 }
 
 // MARK: - SwooshLabel
-/// Option D ("marker swoosh") for "all done!". Done state goes quiet.
+/// The "all done!" label; its done state goes quiet ("Done. Tap to bring it back.").
 struct SwooshLabel: View {
     let done: Bool
 

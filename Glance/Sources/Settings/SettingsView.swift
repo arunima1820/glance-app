@@ -64,7 +64,7 @@ struct SettingsView: View {
 
     private var dataSection: some View {
         Section {
-            Text("Everything stays private on your device and in your own iCloud. No developer server sees it.")
+            Text("Everything stays private on your device. No developer server sees it.")
                 .font(fonts.font(.caption))
                 .foregroundStyle(palette.ink2)
         } header: {
@@ -98,7 +98,7 @@ struct SettingsView: View {
 // MARK: - AppAppearance
 /// Paper (light), chalkboard (dark), or follow the system.
 enum AppAppearance: String, CaseIterable, Identifiable {
-    case system, light, dark, highContrast
+    case system, light, dark
     var id: String { rawValue }
 
     var label: String {
@@ -106,7 +106,6 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         case .system: return "Match iPhone"
         case .light: return "Paper (light)"
         case .dark: return "Chalkboard (dark)"
-        case .highContrast: return "High contrast"
         }
     }
 
@@ -114,7 +113,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         switch self {
         case .system: return nil
         case .light: return .light
-        case .dark, .highContrast: return .dark
+        case .dark: return .dark
         }
     }
 }

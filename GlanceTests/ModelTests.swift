@@ -58,6 +58,19 @@ final class ThemeModelTests: XCTestCase {
         let theme = Theme(name: "Plants")
         XCTAssertEqual(theme.recurrence.anchor, theme.createdAt)
     }
+
+    func testRepeatAnchorOverridesCreationDate() {
+        let theme = Theme(name: "Plants")
+        let anchor = theme.createdAt.addingTimeInterval(-3 * 86_400)
+        theme.repeatAnchor = anchor
+        XCTAssertEqual(theme.recurrence.anchor, anchor)
+    }
+
+    func testFutureAnchorIsClampedToNow() {
+        let theme = Theme(name: "Plants")
+        theme.repeatAnchor = Date().addingTimeInterval(10 * 86_400)   // clock was set ahead
+        XCTAssertLessThanOrEqual(theme.recurrence.anchor, Date())
+    }
 }
 
 // MARK: - StepModelTests
@@ -124,3 +137,15 @@ final class StepTextTests: XCTestCase {
         XCTAssertEqual(parts.detail, "")
     }
 }
+
+// MARK: - TextLimitsTests
+// Covers: Step.swift (TextLimits.clamp).
+
+final class TextLimitsTests: XCTestCase {
+
+    func testClampTrimsAndCuts() {
+        XCTAssertEqual(TextLimits.clamp("  Keys  ", to: 80), "Keys")
+        XCTAssertEqual(TextLimits.clamp(String(repeating: "a", count: 500), to: 80).count, 80)
+    }
+}
+

@@ -3,11 +3,8 @@ import Foundation
 import SwiftData
 import WidgetKit
 
-// MARK: - WidgetDataBridge
-/// Writes a lightweight snapshot of themes into UserDefaults(suiteName:) — the App Group
-/// shared defaults — so the widget extension can read it without touching SwiftData.
-/// After any edit, call `writeSnapshot(_:)` then `WidgetCenter.shared.reloadAllTimelines()`.
-
+// MARK: - Snapshots
+/// What the widget knows about a list (decoded from App Group defaults, never SwiftData).
 struct ThemeSnapshot: Codable, Identifiable {
     let id: UUID
     let name: String
@@ -30,6 +27,10 @@ struct StepSnapshot: Codable, Identifiable {
     var completedAt: Date? = nil
 }
 
+// MARK: - WidgetDataBridge
+/// Writes a lightweight snapshot of lists into the App Group's shared defaults so the widget
+/// extension can read it without touching SwiftData. After any edit call `refresh(from:)`;
+/// it rewrites the snapshot and reloads the widgets.
 enum WidgetDataBridge {
     /// App Group key for the list snapshot the widget draws.
     static let snapshotKey = "glance.widget.snapshot"
@@ -43,7 +44,8 @@ enum WidgetDataBridge {
     static let foodKey = "glance.widget.food"
     /// The App Group defaults shared by app + widget (also used by `@AppStorage(store:)`).
     /// Every reader/writer below takes a `store` so tests can pass an isolated suite.
-    nonisolated(unsafe) static let defaults = UserDefaults(suiteName: GlanceStore.appGroupIdentifier)!
+    /// Falls back to standard defaults if the App Group is missing (misconfigured signing).
+    nonisolated(unsafe) static let defaults = UserDefaults(suiteName: GlanceStore.appGroupIdentifier) ?? .standard
 
     // MARK: Pin
 
@@ -97,12 +99,13 @@ enum WidgetDataBridge {
     static func snapshot(of theme: Theme, now: Date = Date(), calendar: Calendar = .current) -> ThemeSnapshot {
         ThemeSnapshot(
             id: theme.id,
-            name: theme.name,
+            name: TextLimits.clamp(theme.name, to: TextLimits.name),
             colorToken: theme.colorToken,
             iconEmoji: theme.iconEmoji,
             steps: theme.orderedSteps.map { step in
                 let current = theme.isDone(step.completedAt, now: now, calendar: calendar)
-                return StepSnapshot(id: step.id, text: step.text, iconEmoji: step.iconEmoji,
+                return StepSnapshot(id: step.id, text: TextLimits.clamp(step.text, to: TextLimits.step),
+                                    iconEmoji: step.iconEmoji,
                                     completedAt: current ? step.completedAt : nil)
             },
             iconToken: theme.iconToken,
@@ -162,7 +165,9 @@ struct PinThemeIntent: AppIntent {
     init(themeID: String) { self.themeID = themeID }
 
     func perform() async throws -> some IntentResult {
-        WidgetDataBridge.pin(UUID(uuidString: themeID))
+        // A malformed id (stale or hand-made shortcut) must not silently unpin.
+        guard let id = UUID(uuidString: themeID) else { return .result() }
+        WidgetDataBridge.pin(id)
         return .result()
     }
 }
@@ -171,6 +176,8 @@ struct PinThemeIntent: AppIntent {
 /// The app's deep links: `glance://theme/<uuid>` opens that list; `glance://open` opens the app.
 enum GlanceLink {
     static let scheme = "glance"
+    /// Opens the app without a specific list.
+    static let open = URL(string: "glance://open")!
 
     /// URL that opens a list.
     /// - Parameter id: the theme's id.

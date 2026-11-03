@@ -7,7 +7,6 @@ options:
   bundleIdPrefix: com.glance.local
   deploymentTarget:
     iOS: "17.0"
-    watchOS: "10.0"
   xcodeVersion: "16.0"
   developmentLanguage: en
   useBaseInternationalization: true
@@ -35,6 +34,8 @@ targets:
       - path: GlanceShared/Sources
       - path: GlanceShared/Fonts      # Cabin Sketch (OFL); every file listed in UIAppFonts
         buildPhase: resources
+      - path: Glance/Resources/PrivacyInfo.xcprivacy   # Apple privacy manifest (UserDefaults reasons)
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.glance.local.app
@@ -48,7 +49,6 @@ targets:
           - group.com.glance.local
     dependencies:
       - target: GlanceWidgetExtension
-      - target: GlanceWatchStub
     scheme:
       testTargets:
         - GlanceTests
@@ -63,6 +63,8 @@ targets:
       - path: GlanceShared/Sources
       - path: GlanceShared/Fonts
         buildPhase: resources
+      - path: GlanceWidgetExtension/PrivacyInfo.xcprivacy
+        buildPhase: resources
       - path: Glance/Sources/Assets.xcassets
     settings:
       base:
@@ -73,18 +75,6 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.com.glance.local
-
-  # ─── Apple Watch app (stub — v2) ───────────────────────────────────────────
-  GlanceWatchStub:
-    type: application
-    platform: watchOS
-    deploymentTarget: "10.0"
-    sources:
-      - path: GlanceWatchStub/Sources
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.glance.local.app.watchkitapp
-        INFOPLIST_FILE: GlanceWatchStub/Info.plist
 
   # ─── Unit tests ────────────────────────────────────────────────────────────
   GlanceTests:

@@ -71,7 +71,46 @@ struct Recurrence: Codable, Equatable, Sendable {
         return completedAt >= periodStart(atOrBefore: now, calendar: calendar)
     }
 
-    /// Short label for the "Resets" row, e.g. "Every weekday", "Weekly on Mon, Fri".
+    /// True for rules that come round at most every few days (weekly on 1–2 days, monthly,
+    /// every 3+ days). Only these auto-pin to the widget; daily-ish rules (every day, weekdays,
+    /// weekends, every 2 days, weekly on 3+ days) would otherwise grab it almost every morning.
+    var isInfrequent: Bool {
+        switch kind {
+        case .weekly:     return weekdays.count <= 2
+        case .monthly:    return true
+        case .everyNDays: return interval >= 3
+        default:          return false
+        }
+    }
+
+    /// The footer under a list: when its ticks reset, in plain words.
+    /// - Parameters:
+    ///   - now: the reference moment.
+    ///   - calendar: calendar (and locale / time zone) for the wording.
+    func resetHint(now: Date, calendar: Calendar = .current) -> String {
+        guard let next = nextStart(after: now, calendar: calendar) else {
+            return "One-time list: ticks stay until you delete it."
+        }
+        return "Tap a step to cross it off. Resets " + Self.dayLabel(next, now: now, calendar: calendar) + "."
+    }
+
+    /// "tomorrow", a weekday within the next week ("Tue"), or a date further out ("Dec 1").
+    /// - Parameters:
+    ///   - date: the day to describe.
+    ///   - now: the reference moment.
+    ///   - calendar: calendar (and locale / time zone) for the wording.
+    static func dayLabel(_ date: Date, now: Date, calendar: Calendar = .current) -> String {
+        let today = calendar.startOfDay(for: now)
+        let days = calendar.dateComponents([.day], from: today, to: calendar.startOfDay(for: date)).day ?? 0
+        if days == 1 { return "tomorrow" }
+        let style = Date.FormatStyle(locale: calendar.locale ?? .current, calendar: calendar,
+                                     timeZone: calendar.timeZone)
+        return days <= 6
+            ? date.formatted(style.weekday(.abbreviated))
+            : date.formatted(style.month(.abbreviated).day())
+    }
+
+    /// Short label for a rule, e.g. "Every weekday", "Weekly on Mon, Fri" (tests, accessibility).
     func summary(calendar: Calendar = .current) -> String {
         switch kind {
         case .oneTime:    return "One time"

@@ -158,4 +158,30 @@ final class RecurrenceTests: XCTestCase {
         XCTAssertEqual(Recurrence(kind: .monthly, dayOfMonth: 5).summary(calendar: calendar), "Monthly on day 5")
         XCTAssertEqual(Recurrence(kind: .everyNDays, interval: 3).summary(calendar: calendar), "Every 3 days")
     }
+
+    // MARK: Auto-pin eligibility and wording
+
+    func testInfrequentRules() {
+        XCTAssertTrue(Recurrence(kind: .weekly, weekdays: [2]).isInfrequent)
+        XCTAssertTrue(Recurrence(kind: .monthly).isInfrequent)
+        XCTAssertTrue(Recurrence(kind: .everyNDays, interval: 3).isInfrequent)
+        XCTAssertFalse(Recurrence(kind: .weekdays).isInfrequent)
+        XCTAssertFalse(Recurrence(kind: .everyNDays, interval: 2).isInfrequent)
+        XCTAssertFalse(Recurrence(kind: .oneTime).isInfrequent)
+    }
+
+    func testDayLabelSaysTomorrowThenWeekdayThenDate() {
+        let now = date(2026, 11, 2)
+        XCTAssertEqual(Recurrence.dayLabel(date(2026, 11, 3, 0), now: now, calendar: calendar), "tomorrow")
+        XCTAssertEqual(Recurrence.dayLabel(date(2026, 11, 5, 0), now: now, calendar: calendar), "Thu")
+        XCTAssertEqual(Recurrence.dayLabel(date(2026, 11, 20, 0), now: now, calendar: calendar), "Nov 20")
+    }
+
+    func testResetHintMatchesTheRule() {
+        let now = date(2026, 11, 2)
+        XCTAssertEqual(Recurrence(kind: .daily).resetHint(now: now, calendar: calendar),
+                       "Tap a step to cross it off. Resets tomorrow.")
+        XCTAssertEqual(Recurrence(kind: .oneTime).resetHint(now: now, calendar: calendar),
+                       "One-time list: ticks stay until you delete it.")
+    }
 }

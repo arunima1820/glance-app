@@ -130,19 +130,20 @@ enum WidgetSelection {
         (theme.recurrence ?? Recurrence()).isStillComplete(theme.completedAt, now: now, calendar: calendar)
     }
 
-    /// Lists the widget may show at `now`: all except finished ones.
+    /// Lists the widget may show at `now`: those with steps that aren't finished.
     static func visible(_ themes: [ThemeSnapshot], now: Date, calendar: Calendar = .current) -> [ThemeSnapshot] {
-        themes.filter { !isFinished($0, now: now, calendar: calendar) }
+        themes.filter { !$0.steps.isEmpty && !isFinished($0, now: now, calendar: calendar) }
     }
 
     /// A list that has come round again since the user last pinned/unpinned pins itself.
-    /// Only lists that repeat less often than daily (weekly, monthly, …) do this, so daily
-    /// lists don't grab the widget every morning. Latest-starting period wins.
+    /// Only infrequent rules do this (`Recurrence.isInfrequent`), so daily-ish lists don't grab
+    /// the widget every morning. Latest-starting period wins; ties keep list order
+    /// (`max(by:)` keeps the first of equal elements).
     static func autoPinned(_ visible: [ThemeSnapshot], pin: WidgetPin, now: Date,
                            calendar: Calendar = .current) -> UUID? {
         let since = pin.at ?? .distantPast
         return visible.compactMap { theme -> (UUID, Date)? in
-            guard let rule = theme.recurrence, rule.kind != .daily, rule.kind != .oneTime else { return nil }
+            guard let rule = theme.recurrence, rule.isInfrequent else { return nil }
             let start = rule.periodStart(atOrBefore: now, calendar: calendar)
             return start > since ? (theme.id, start) : nil
         }
@@ -158,11 +159,20 @@ enum WidgetSelection {
     ///   - now: the moment being drawn.
     static func selectedID(visible: [ThemeSnapshot], pin: WidgetPin, configured: String?,
                            now: Date, calendar: Calendar = .current) -> UUID? {
-        if let auto = autoPinned(visible, pin: pin, now: now, calendar: calendar) { return auto }
+        if let chosen = explicitID(visible: visible, pin: pin, now: now, calendar: calendar) { return chosen }
         let ids = Set(visible.map(\.id))
-        if let pinned = pin.themeID, ids.contains(pinned) { return pinned }
         if let chosen = configured.flatMap(UUID.init(uuidString:)), ids.contains(chosen) { return chosen }
         return visible.first?.id
+    }
+
+    /// The list that is pinned on purpose (auto-pin, else the user's pin if still visible), or
+    /// nil when the widget is only falling back to the first list. The app fills the pin icon
+    /// only for this one, so tapping a filled pin always unpins.
+    static func explicitID(visible: [ThemeSnapshot], pin: WidgetPin, now: Date,
+                           calendar: Calendar = .current) -> UUID? {
+        if let auto = autoPinned(visible, pin: pin, now: now, calendar: calendar) { return auto }
+        guard let pinned = pin.themeID, visible.contains(where: { $0.id == pinned }) else { return nil }
+        return pinned
     }
 
     /// A step as the widget draws it.

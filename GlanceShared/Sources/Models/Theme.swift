@@ -2,9 +2,8 @@ import Foundation
 import SwiftData
 
 // MARK: - ThemeCompletionStyle
-/// How a theme's list is completed. Both styles are offered; the user picks per theme.
-/// - sweep: tap once to clear the whole list (the "wipe the fridge board" gesture).
-/// - perItem: tap each step individually to mark it done.
+/// Legacy: stored only so existing stores still migrate. No screen offers it and nothing reads
+/// it; every list completes the same way (tap rows, or "all done!" ticks them all).
 enum ThemeCompletionStyle: String, Codable, CaseIterable, Identifiable {
     case sweep
     case perItem
@@ -43,6 +42,9 @@ final class Theme: Identifiable {
     var repeatWeekdays: [Int] = []
     var repeatDayOfMonth: Int = 1
     var repeatInterval: Int = 2
+    /// Day the cycle counts from (every-N-days / weekly-without-days); set when the rule changes.
+    /// nil on lists made before this field existed: they count from `createdAt`.
+    var repeatAnchor: Date? = nil
 
     @Relationship(deleteRule: .cascade, inverse: \Step.theme)
     var steps: [Step]
@@ -70,12 +72,13 @@ final class Theme: Identifiable {
     }
 
     /// How often this list wipes clean (daily by default; `.oneTime` never resets).
-    /// The cycle for "every N days" counts from the list's creation day.
+    /// The cycle for "every N days" counts from `repeatAnchor` (or the creation day).
     var recurrence: Recurrence {
         get {
             Recurrence(kind: Recurrence.Kind(rawValue: repeatKind) ?? .daily,
                        weekdays: Set(repeatWeekdays), dayOfMonth: repeatDayOfMonth,
-                       interval: repeatInterval, anchor: createdAt)
+                       interval: repeatInterval,
+                       anchor: min(repeatAnchor ?? createdAt, Date()))   // a clock set ahead can't stall it
         }
         set {
             repeatKind = newValue.kind.rawValue

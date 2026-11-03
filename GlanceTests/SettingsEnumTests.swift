@@ -12,7 +12,6 @@ final class SettingsEnumTests: XCTestCase {
             (.system, nil),
             (.light, .light),
             (.dark, .dark),
-            (.highContrast, .dark),
         ]
         for (mode, scheme) in expected {
             XCTAssertEqual(mode.colorScheme, scheme, "AppAppearance.\(mode.rawValue)")
@@ -29,5 +28,9 @@ final class SettingsEnumTests: XCTestCase {
         for mode in AppAppearance.allCases {
             XCTAssertEqual(mode.rawValue, mode.id)
         }
+    }
+
+    func testOnlyThreeAppearancesAreOffered() {
+        XCTAssertEqual(AppAppearance.allCases, [.system, .light, .dark])
     }
 }

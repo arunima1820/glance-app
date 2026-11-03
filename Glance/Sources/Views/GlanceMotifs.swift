@@ -105,3 +105,19 @@ extension ToolbarContent {
     }
 }
 
+// MARK: - Current day
+/// The moment views judge "done today" against. RootTabView refreshes it when the app becomes
+/// active and when the calendar day changes, so ticks from yesterday visibly clear (and a tap
+/// after midnight ticks rather than un-ticks).
+private struct GlanceNowKey: EnvironmentKey {
+    static let defaultValue = Date()
+}
+
+extension EnvironmentValues {
+    /// See `GlanceNowKey`.
+    var glanceNow: Date {
+        get { self[GlanceNowKey.self] }
+        set { self[GlanceNowKey.self] = newValue }
+    }
+}
+

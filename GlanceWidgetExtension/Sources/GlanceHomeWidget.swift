@@ -27,19 +27,13 @@ struct GlanceHomeWidget: Widget {
 // MARK: - AppIntent for selecting a theme inside the widget
 
 struct SelectThemeIntent: AppIntent, WidgetConfigurationIntent {
-    static let title: LocalizedStringResource = "Select Theme"
-    static let description = IntentDescription("Choose which theme's steps to display.")
-
-    @Parameter(title: "Theme ID")
-    var selectedThemeID: String?
+    static let title: LocalizedStringResource = "Glance list"
+    static let description = IntentDescription("Shows the list you pinned in the app, or the first one to do.")
 
     init() {}
-    init(selectedThemeID: String?) {
-        self.selectedThemeID = selectedThemeID
-    }
 
     func perform() async throws -> some IntentResult {
-        // The intent itself just carries the selected ID back as widget configuration.
+        // No settings yet: which list to show is decided by the pin in the app.
         return .result()
     }
 }
@@ -76,7 +70,7 @@ struct GlanceTimelineProvider: AppIntentTimelineProvider {
     private static func makeEntry(_ configuration: SelectThemeIntent, at date: Date = Date()) -> GlanceEntry {
         let visible = WidgetSelection.visible(loadThemes(), now: date)
         let selected = WidgetSelection.selectedID(visible: visible, pin: WidgetDataBridge.pin,
-                                                  configured: configuration.selectedThemeID, now: date)
+                                                  configured: nil, now: date)
         return GlanceEntry(date: date, themes: visible, selectedThemeID: selected?.uuidString,
                            food: WidgetDataBridge.readFood())
     }
@@ -259,7 +253,7 @@ struct WidgetNothingToDo: View {
         }
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .widgetURL(URL(string: "\(GlanceLink.scheme)://open"))
+        .widgetURL(GlanceLink.open)
     }
 }
 

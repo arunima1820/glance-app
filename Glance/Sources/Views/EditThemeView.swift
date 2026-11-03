@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 // MARK: - EditThemeView  (Screen C: create or edit a list)
-/// A list's settings only: name, icon, colour, repeats, and delete. Steps live in the list itself
+/// A list's settings only: name, icon, repeats, and delete. Steps live in the list itself
 /// (add with the inline row, swipe to delete). Native `Form` half-sheet.
 struct EditThemeView: View {
     @Environment(\.modelContext) private var modelContext
@@ -17,7 +17,6 @@ struct EditThemeView: View {
     var onDelete: (() -> Void)?
 
     @State private var name = ""
-    @State private var colorToken = "sage"
     @State private var iconToken = ThemeIcons.default
     @State private var completionStyle = ThemeCompletionStyle.sweep
     @State private var recurrence = Recurrence()
@@ -32,7 +31,6 @@ struct EditThemeView: View {
             Form {
                 nameSection
                 iconSection
-                colorSection
                 RepeatEditor(rule: $recurrence)
                 if isEditing { deleteSection }
             }
@@ -69,13 +67,6 @@ struct EditThemeView: View {
         }
     }
 
-    private var colorSection: some View {
-        Section("Colour") {
-            ColorTokenPicker(selection: $colorToken)
-                .listRowBackground(palette.card)
-        }
-    }
-
     private var deleteSection: some View {
         Section {
             Button(role: .destructive) { showingDeleteConfirm = true } label: {
@@ -89,13 +80,8 @@ struct EditThemeView: View {
     /// once the sheet is dragged to full height (a "halo" the half sheet doesn't show);
     /// hiding that shared background keeps the buttons looking the same at every height.
     @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
-        if #available(iOS 26.0, *) {
-            cancelItem.sharedBackgroundVisibility(.hidden)
-            saveItem.sharedBackgroundVisibility(.hidden)
-        } else {
-            cancelItem
-            saveItem
-        }
+        cancelItem.withoutSharedGlass()
+        saveItem.withoutSharedGlass()
     }
 
     private var cancelItem: some ToolbarContent {
@@ -124,7 +110,6 @@ struct EditThemeView: View {
             return
         }
         name = theme.name
-        colorToken = theme.colorToken
         iconToken = theme.iconToken
         completionStyle = theme.completionStyle
         recurrence = theme.recurrence
@@ -133,11 +118,10 @@ struct EditThemeView: View {
     /// Writes the settings back (steps are never touched here), then refreshes the widget.
     private func save() {
         let target = theme ?? insertNewTheme()
-        target.name = name.trimmingCharacters(in: .whitespaces)
-        target.colorToken = colorToken
+        target.name = TextLimits.clamp(name, to: TextLimits.name)
         target.iconToken = iconToken
         target.completionStyle = completionStyle
-        target.recurrence = recurrence
+        target.changeRecurrence(to: recurrence)   // clears ticks the old rule had expired
         target.updatedAt = .now
         try? modelContext.save()
         WidgetDataBridge.refresh(from: modelContext)
@@ -190,35 +174,8 @@ struct IconPicker: View {
     }
 }
 
-// MARK: - ColorTokenPicker
-/// Row of theme colors; color is paired with its name for VoiceOver.
-struct ColorTokenPicker: View {
-    @Environment(\.palette) private var palette
-    @Environment(\.colorScheme) private var scheme
-    @Binding var selection: String
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                ForEach(ThemePalette.all) { entry in
-                    let selected = entry.id == selection
-                    Button { selection = entry.id } label: {
-                        Circle()
-                            .fill(scheme == .dark ? entry.dark : entry.light)
-                            .frame(width: 34, height: 34)
-                            .overlay(Circle().stroke(palette.ink, lineWidth: selected ? 2.5 : 0.5))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(entry.displayName + (selected ? ", selected" : ""))
-                }
-            }
-            .padding(.vertical, 4)
-        }
-    }
-}
-
 // MARK: - RepeatEditor
-/// "Repeats" section (design option B): lists repeat by default; a switch makes a one-time
+/// "Repeats" section: lists repeat by default; a switch makes a one-time
 /// list. One "Resets" menu row holds the simple choices; weekly / monthly / every-few-days
 /// show one small extra control underneath.
 struct RepeatEditor: View {

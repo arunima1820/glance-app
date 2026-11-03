@@ -2,7 +2,7 @@ import XCTest
 @testable import Glance
 
 // MARK: - WidgetSelectionTests
-// Covers: WidgetSelection (isFinished, visible, autoPinned, selectedID) and WidgetPin.
+// Covers: WidgetSelection (isFinished, visible, autoPinned, explicitID, selectedID) and WidgetPin.
 
 final class WidgetSelectionTests: XCTestCase {
 
@@ -18,7 +18,8 @@ final class WidgetSelectionTests: XCTestCase {
     }
 
     private func list(_ name: String, _ rule: Recurrence? = nil, done: Date? = nil) -> ThemeSnapshot {
-        ThemeSnapshot(id: UUID(), name: name, colorToken: "sage", iconEmoji: "", steps: [],
+        ThemeSnapshot(id: UUID(), name: name, colorToken: "sage", iconEmoji: "",
+                      steps: [StepSnapshot(id: UUID(), text: "Step", iconEmoji: nil)],
                       recurrence: rule, completedAt: done)
     }
 
@@ -127,6 +128,32 @@ final class WidgetSelectionTests: XCTestCase {
         let meds = list("Meds")
         let water = list("Water")
         XCTAssertEqual(select([meds, water], pin: WidgetPin(), configured: "not-a-uuid", at: date(2)), meds.id)
+    }
+
+    // MARK: Hardening (2026-11-02 review)
+
+    func testDailyishRulesNeverAutoPin() {
+        for rule in [Recurrence(kind: .weekdays), Recurrence(kind: .weekends),
+                     Recurrence(kind: .everyNDays, interval: 2), Recurrence(kind: .weekly, weekdays: [2, 4, 6])] {
+            XCTAssertNil(WidgetSelection.autoPinned([list("Work", rule)], pin: WidgetPin(), now: date(10), calendar: calendar),
+                         "\(rule.kind) should not grab the widget")
+        }
+    }
+
+    func testEveryThreeDaysAutoPins() {
+        let plants = list("Plants", Recurrence(kind: .everyNDays, interval: 3, anchor: date(1)))
+        XCTAssertEqual(WidgetSelection.autoPinned([plants], pin: WidgetPin(), now: date(4), calendar: calendar), plants.id)
+    }
+
+    func testListWithNoStepsIsNeverVisible() {
+        let empty = ThemeSnapshot(id: UUID(), name: "Empty", colorToken: "sage", iconEmoji: "", steps: [])
+        XCTAssertTrue(WidgetSelection.visible([empty], now: date(2), calendar: calendar).isEmpty)
+    }
+
+    func testFallbackListIsNotAnExplicitPin() {
+        let meds = list("Meds")
+        XCTAssertNil(WidgetSelection.explicitID(visible: [meds], pin: WidgetPin(), now: date(2), calendar: calendar))
+        XCTAssertEqual(select([meds], pin: WidgetPin(), at: date(2)), meds.id, "still shown as the fallback")
     }
 }
 
