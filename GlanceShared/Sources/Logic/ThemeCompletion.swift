@@ -18,18 +18,34 @@ extension Theme {
         allStepsDone(now: now, calendar: calendar)
     }
 
+    /// Start of this list's current period: ticks stamped before it no longer count. Work it
+    /// out once when checking many steps (finding it walks back through the calendar).
+    func currentPeriodStart(now: Date = Date(), calendar: Calendar = .current) -> Date {
+        recurrence.periodStart(atOrBefore: now, calendar: calendar)
+    }
+
+    /// Whether a tick still counts, given the period start from `currentPeriodStart`.
+    /// - Parameters:
+    ///   - date: when the step was ticked (nil = not ticked).
+    ///   - start: the current period's start.
+    static func counts(_ date: Date?, since start: Date) -> Bool {
+        guard let date else { return false }
+        return date >= start
+    }
+
     /// True when the list has steps and every one is (still) complete.
     func allStepsDone(now: Date = Date(), calendar: Calendar = .current) -> Bool {
-        let steps = orderedSteps
         guard !steps.isEmpty else { return false }
-        return steps.allSatisfy { isDone($0.completedAt, now: now, calendar: calendar) }
+        let start = currentPeriodStart(now: now, calendar: calendar)
+        return steps.allSatisfy { Self.counts($0.completedAt, since: start) }
     }
 
     /// When the list was finished in the current period (nil if it isn't finished).
     /// Written to the widget snapshot so the widget can hide it until it comes round again.
     func listCompletedAt(now: Date = Date(), calendar: Calendar = .current) -> Date? {
         guard isListComplete(now: now, calendar: calendar) else { return nil }
-        return steps.compactMap(\.completedAt).filter { isDone($0, now: now, calendar: calendar) }.max()
+        let start = currentPeriodStart(now: now, calendar: calendar)
+        return steps.compactMap(\.completedAt).filter { Self.counts($0, since: start) }.max()
     }
 
     /// Flips one step's done state (tap-to-check, offered in every list).
@@ -42,14 +58,11 @@ extension Theme {
     func toggle(_ step: Step, now: Date = Date(), calendar: Calendar = .current) {
         let wasDone = isDone(step.completedAt, now: now, calendar: calendar)
         step.setComplete(!wasDone, now: now)
-        if wasDone { lastSweptAt = nil }
         updatedAt = now
     }
 
-    /// Clears the whole list in one gesture (the fridge-board wipe) and stamps the sweep time.
-    /// Ticks each step (that's what makes the list complete); `lastSweptAt` is kept as a record.
+    /// "all done!": ticks every step (that's what makes the list complete).
     func sweepComplete(now: Date = Date()) {
-        lastSweptAt = now
         updatedAt = now
         for step in steps { step.setComplete(true, now: now) }
     }
@@ -57,7 +70,6 @@ extension Theme {
     /// Un-ticks every step (the user un-sweeps). Period resets need no call: `Recurrence`
     /// decides which ticks still count.
     func resetCompletion(now: Date = Date()) {
-        lastSweptAt = nil
         updatedAt = now
         for step in steps { step.setComplete(false, now: now) }
     }
@@ -77,7 +89,6 @@ extension Theme {
         for step in steps where !old.isStillComplete(step.completedAt, now: now, calendar: calendar) {
             step.completedAt = nil
         }
-        if !old.isStillComplete(lastSweptAt, now: now, calendar: calendar) { lastSweptAt = nil }
         recurrence = rule
         repeatAnchor = now
         updatedAt = now

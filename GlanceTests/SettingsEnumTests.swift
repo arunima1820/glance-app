@@ -3,7 +3,7 @@ import SwiftUI
 @testable import Glance
 
 // MARK: - SettingsEnumTests
-// Covers: Glance/Sources/Settings/SettingsView.swift (AppAppearance)
+// Covers: Glance/Sources/Settings/SettingsView.swift (AppAppearance) and ContentView.swift (RootTab raw values).
 
 final class SettingsEnumTests: XCTestCase {
 
@@ -32,5 +32,10 @@ final class SettingsEnumTests: XCTestCase {
 
     func testOnlyThreeAppearancesAreOffered() {
         XCTAssertEqual(AppAppearance.allCases, [.system, .light, .dark])
+    }
+
+    func testTabRawValuesAreStableForStorage() {
+        XCTAssertEqual(RootTab.allCases.map(\.rawValue), ["lists", "food", "settings"])
+        XCTAssertEqual(RootTab(rawValue: "food"), .food)
     }
 }

@@ -2,7 +2,7 @@ import XCTest
 @testable import Glance
 
 // MARK: - FreshnessTests
-// Covers: Freshness (of(useBy:now:calendar:) and label).
+// Covers: GlanceShared/Sources/Logic/Freshness.swift (of(useBy:now:calendar:), label, spokenLabel).
 
 final class FreshnessTests: XCTestCase {
 
@@ -47,5 +47,19 @@ final class FreshnessTests: XCTestCase {
     func testTwoWeeksIsWeeks() {
         XCTAssertEqual(freshness(inDays: 14), .weeks)
         XCTAssertEqual(freshness(inDays: 14).label, "weeks")
+    }
+
+    func testNoDateIsNoneWithNoText() {
+        let f = Freshness.of(useBy: nil, now: now, calendar: calendar)
+        XCTAssertEqual(f, .none)
+        XCTAssertEqual(f.label, "")
+        XCTAssertEqual(f.spokenLabel, "no expiry date")
+    }
+
+    func testSpokenLabelsReadNaturally() {
+        XCTAssertEqual(freshness(inDays: 0).spokenLabel, "use today")
+        XCTAssertEqual(freshness(inDays: 2).spokenLabel, "use within 2 days")
+        XCTAssertEqual(freshness(inDays: -3).spokenLabel, "expired")
+        XCTAssertEqual(freshness(inDays: 20).spokenLabel, "good for weeks")
     }
 }

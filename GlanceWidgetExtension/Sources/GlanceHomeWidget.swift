@@ -4,8 +4,9 @@ import AppIntents
 
 // MARK: - GlanceHomeWidget
 /// Home-screen widget in three sizes. Shows one list (chosen by `WidgetSelection`: auto-pin,
-/// the user's tile pin, or the first unfinished list); large adds a Food column when there
-/// is food. Display-only: tapping opens that list in the app.
+/// the user's tile pin, or the first unfinished list); large adds a "use soon" Food column
+/// when there is food due. Display-only: tapping opens that list in the app.
+/// (Food on its own is the separate Glance Food widget, small and medium.)
 struct GlanceHomeWidget: Widget {
     let kind = "GlanceHomeWidget"
 
@@ -19,7 +20,7 @@ struct GlanceHomeWidget: Widget {
                 .containerBackground(for: .widget) { WidgetBackground() }
         }
         .configurationDisplayName("Glance")
-        .description("See your tiny list at a glance.")
+        .description("Your list at a glance. The large size adds food to use soon.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
@@ -71,8 +72,9 @@ struct GlanceTimelineProvider: AppIntentTimelineProvider {
         let visible = WidgetSelection.visible(loadThemes(), now: date)
         let selected = WidgetSelection.selectedID(visible: visible, pin: WidgetDataBridge.pin,
                                                   configured: nil, now: date)
-        return GlanceEntry(date: date, themes: visible, selectedThemeID: selected?.uuidString,
-                           food: WidgetDataBridge.readFood())
+        let food = FoodQuery.useSoon(WidgetDataBridge.readFood(), now: date,
+                                     lookAheadDays: LookAhead.twoWeeks.days, includeExpired: true)
+        return GlanceEntry(date: date, themes: visible, selectedThemeID: selected?.uuidString, food: food)
     }
 
     /// Live data from the App Group. Placeholders only if the app has never written a
@@ -80,6 +82,12 @@ struct GlanceTimelineProvider: AppIntentTimelineProvider {
     private static func loadThemes() -> [ThemeSnapshot] {
         WidgetDataBridge.readSnapshotIfWritten() ?? WidgetPlaceholders.themes
     }
+}
+
+// MARK: - WidgetFamily text size
+extension WidgetFamily {
+    /// Medium and large widgets use home-screen app-name size text (12pt); small stays tighter.
+    var bodyRole: FontRole { self == .systemSmall ? .widgetBody : .widgetBodyRoomy }
 }
 
 // MARK: - Widget views
@@ -117,11 +125,13 @@ struct GlanceHomeWidgetView: View {
 }
 
 // MARK: Step list (shared by all sizes)
-/// Small step lines (11pt rounded, one line each) with a marker-dot bullet, separated by
+/// Step lines (11pt on small; 12pt, the home-screen app-name size, on medium / large; one line
+/// each) with a marker-dot bullet, separated by
 /// dashed hairline dividers. Done steps get the app's checkmark + strikethrough and sit
 /// at the bottom (widget only).
 struct WidgetStepList: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.widgetFamily) private var family
     let theme: ThemeSnapshot
     let date: Date
     let limit: Int
@@ -137,7 +147,7 @@ struct WidgetStepList: View {
             }
             if rows.count > limit {
                 Text("+\(rows.count - limit) more")
-                    .font(style.fonts.font(.widgetBody))
+                    .font(style.fonts.font(family.bodyRole))
                     .foregroundStyle(style.palette.ink2)
                     .padding(.top, 2)
             }
@@ -148,6 +158,7 @@ struct WidgetStepList: View {
 
 /// One widget line: dot + text, or (done) checkmark + struck-through text.
 struct WidgetStepRow: View {
+    @Environment(\.widgetFamily) private var family
     let row: WidgetSelection.Row
     let style: WidgetStyle
 
@@ -162,7 +173,8 @@ struct WidgetStepRow: View {
                 Circle().fill(style.palette.marker).frame(width: 4, height: 4).frame(width: 8)
             }
             Text(row.step.text)
-                .font(style.fonts.font(.widgetBody))
+                .privacySensitive()   // hidden in StandBy / on a locked screen when the user asks
+                .font(style.fonts.font(family.bodyRole))
                 .strikethrough(row.isDone, color: style.palette.ink2)
                 .foregroundStyle(row.isDone ? style.palette.ink2 : style.palette.ink)
                 .lineLimit(1)
@@ -236,6 +248,7 @@ struct WidgetThemeTitle: View {
 /// Shown when there are no lists at all.
 struct WidgetNothingToDo: View {
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.widgetFamily) private var family
 
     var body: some View {
         let style = WidgetStyle(scheme)
@@ -248,7 +261,7 @@ struct WidgetNothingToDo: View {
                 .font(style.fonts.font(.widgetTitle))
                 .foregroundStyle(style.palette.ink)
             Text("Enjoy the quiet.")
-                .font(style.fonts.font(.widgetBody))
+                .font(style.fonts.font(family.bodyRole))
                 .foregroundStyle(style.palette.ink2)
         }
         .multilineTextAlignment(.center)
@@ -275,7 +288,7 @@ struct MediumLargeWidgetView: View {
                 tasksColumn
                 if showsFood {
                     WidgetVerticalDivider(color: WidgetStyle(scheme).palette.ink2.opacity(0.4))
-                    WidgetFoodSection(items: entry.food)
+                    WidgetFoodSection(items: entry.food, date: entry.date)
                 }
             }
         }
@@ -285,7 +298,7 @@ struct MediumLargeWidgetView: View {
         VStack(alignment: .leading, spacing: 4) {
             if let theme = entry.selectedTheme {
                 WidgetThemeTitle(theme: theme)
-                WidgetStepList(theme: theme, date: entry.date, limit: family == .systemLarge ? 16 : 5)
+                WidgetStepList(theme: theme, date: entry.date, limit: family == .systemLarge ? 14 : 5)
                     .widgetURL(GlanceLink.theme(theme.id))
             } else {
                 WidgetNothingToDo()
@@ -315,63 +328,22 @@ struct WidgetVerticalDivider: View {
 }
 
 // MARK: Food section (large widget)
-/// The groceries column: soonest-to-expire first, each with a freshness pill (text + color).
+/// The large widget's food column: what to use soon (already in order), each with its pill.
 struct WidgetFoodSection: View {
     @Environment(\.colorScheme) private var scheme
     let items: [FoodSnapshot]
+    let date: Date
 
     var body: some View {
         let style = WidgetStyle(scheme)
-        let sorted = items.sorted { $0.useByDate < $1.useByDate }.prefix(12)
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
-                Image(systemName: "refrigerator")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(style.palette.avocado)
-                    .accessibilityHidden(true)
-                Text("Food")
-                    .font(style.fonts.font(.widgetTitle))
-                    .foregroundStyle(style.palette.ink)
+        // A Link, not widgetURL: the tasks column already owns the widget's one widgetURL.
+        Link(destination: GlanceLink.foodTab) {
+            VStack(alignment: .leading, spacing: 4) {
+                WidgetFoodTitle(style: style)
+                WidgetFoodList(items: Array(items.prefix(12)), date: date, style: style)
+                Spacer(minLength: 0)
             }
-            ForEach(Array(sorted.enumerated()), id: \.element.id) { index, item in
-                if index > 0 { WidgetDashedDivider(color: style.palette.hairline) }
-                WidgetFoodRow(item: item)
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// One food line: name, then its freshness pill.
-struct WidgetFoodRow: View {
-    @Environment(\.colorScheme) private var scheme
-    let item: FoodSnapshot
-
-    var body: some View {
-        let style = WidgetStyle(scheme)
-        let fresh = Freshness.of(useBy: item.useByDate)
-        HStack(spacing: 4) {
-            Text(item.name)
-                .font(style.fonts.font(.widgetBody))
-                .foregroundStyle(style.palette.ink)
-                .lineLimit(1)
-            Spacer(minLength: 2)
-            Text(fresh.label)
-                .font(.system(size: 8.5, weight: .heavy, design: .rounded))
-                .foregroundStyle(Palettes.fridgeMarker.light.ink)   // dark ink on every pill (contrast)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1)
-                .background(pillColor(fresh, style.palette), in: Capsule())
-        }
-        .padding(.vertical, 2.5)
-    }
-
-    private func pillColor(_ fresh: Freshness, _ palette: Palette) -> Color {
-        switch fresh {
-        case .expired: return palette.marker.opacity(0.45)
-        case .days: return palette.mustard.opacity(0.6)
-        case .weeks: return palette.avocado.opacity(0.45)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

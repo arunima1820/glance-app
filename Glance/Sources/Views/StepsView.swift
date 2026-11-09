@@ -3,15 +3,16 @@ import SwiftData
 
 // MARK: - StepsView  (Screen B: the glance view)
 /// The list you look at. Native `List` on the paper surface, ~9pt rows, no emoji.
-/// Tap any row to cross it off; "all done!" crosses off the whole list. Either way, done rows
-/// get the same checkmark. An inline row at the end is the only place to add a step.
-/// Long-press a step to edit its text or delete it; drag to reorder. A one-time list offers
+/// Tap a row to cross it off; "all done!" crosses off the whole list (same checkmark either way).
+/// Double-tap a row to edit its text in place; long-press and drag to reorder; swipe left to
+/// delete. An inline row at the end is the only place to add a step. A one-time list offers
 /// to delete itself once everything is done.
 struct StepsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.palette) private var palette
     @Environment(\.fonts) private var fonts
     @Environment(\.glanceNow) private var now
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let theme: Theme
     /// Called when the user deletes this list from the Edit sheet; the parent pops back to
     /// the tiles and performs the delete.
@@ -20,43 +21,38 @@ struct StepsView: View {
     @State private var showingEdit = false
     @State private var newStepText = ""
     @FocusState private var addFieldFocused: Bool
-    @State private var editingStep: Step?
+    /// The step being edited in place (double-tap), and its draft text.
+    @State private var editingStepID: UUID?
     @State private var editText = ""
+    @FocusState private var editFieldFocused: Bool
     @State private var offeringDelete = false
+    /// The dust-and-dots burst after "all done!".
+    @State private var celebrating = false
 
     var body: some View {
         if theme.isDeleted {
             Color.clear   // mid-pop after a delete: never touch a deleted model
         } else {
             content
-                .alert("Edit step", isPresented: isEditingStep) {
-                    TextField("Step", text: $editText)
-                    Button("Save", action: commitEdit)
-                    Button("Cancel", role: .cancel) {}
-                }
-                .confirmationDialog("All done! Delete this list?", isPresented: $offeringDelete,
-                                    titleVisibility: .visible) {
-                    Button("Delete this list", role: .destructive, action: onDelete)
-                    Button("Keep it", role: .cancel) {}
-                } message: {
-                    Text("It's a one-time list, so it won't come back.")
-                }
+                .confirmDelete("All done! Delete this list?", isPresented: $offeringDelete,
+                               message: "It's a one-time list, so it won't come back.",
+                               deleteLabel: "Delete this list", keepLabel: "Keep it", onDelete: onDelete)
         }
     }
 
+    /// The list card, its header and footer, the add row, Edit, and the "all done!" bar.
     private var content: some View {
         List {
             Section {
+                let start = theme.currentPeriodStart(now: max(now, Date()))   // once per draw, not per row
                 ForEach(theme.orderedSteps) { step in
-                    stepRow(step)
-                        .listRowBackground(palette.card)
-                        .listRowSeparatorTint(palette.hairline)
-                        .contextMenu { stepMenu(step) }
+                    stepRow(step, done: Theme.counts(step.completedAt, since: start))
+                        .paperListRow(palette)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) { deleteAction(step) }
                 }
-                .onDelete(perform: deleteSteps)
-                .onMove(perform: moveSteps)
+                .onMove(perform: moveSteps)   // long-press a row, then drag
                 addRow
-                    .listRowBackground(palette.card)
+                    .paperListRow(palette)
             } header: {
                 listHeader
             } footer: {
@@ -70,36 +66,66 @@ struct StepsView: View {
         .toolbar { toolbarContent }
         .paperBars(palette)
         .safeAreaInset(edge: .bottom) { sweepBar }
+
         .sheet(isPresented: $showingEdit) {
             EditThemeView(theme: theme, onDelete: onDelete)
+        }
+        .onChange(of: editFieldFocused) { _, focused in
+            if !focused { commitEdit() }   // tapping elsewhere saves, like Notes
         }
     }
 
     // MARK: Rows
 
-    /// One tappable step row: the step text (led by a checkmark when done).
-    /// - Parameter step: the step to render.
-    private func stepRow(_ step: Step) -> some View {
-        Button { toggle(step) } label: {
+    /// One step row: tap to tick, double-tap to edit in place (or the edit field itself).
+    /// - Parameters:
+    ///   - step: the step to render.
+    ///   - done: whether it's ticked this period.
+    @ViewBuilder private func stepRow(_ step: Step, done: Bool) -> some View {
+        if editingStepID == step.id {
+            TextField("Step", text: $editText)
+                .characterLimit($editText, TextLimits.step)
+                .font(fonts.font(.rowBody))
+                .foregroundStyle(palette.ink)
+                .focused($editFieldFocused)
+                .submitLabel(.done)
+                .onSubmit(commitEdit)
+                .onAppear { editFieldFocused = true }   // focus once the field exists
+                .padding(.vertical, 3)
+        } else {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                stepText(step)
-                    .foregroundStyle(isDone(step) ? palette.ink2 : palette.ink)
+                stepText(step, done: done)
+                    .foregroundStyle(done ? palette.ink2 : palette.ink)
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 3)
             .contentShape(Rectangle())   // whole row is the tap target, not just the glyphs
+            .onTapGesture(count: 2) { beginEdit(step) }   // listed first so it wins over the single tap
+            .onTapGesture { toggle(step) }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityValue(done ? "done" : "not done")
+            .accessibilityHint(done ? "Unchecks this step" : "Checks off this step")
+            .accessibilityAction(named: "Edit text") { beginEdit(step) }
+            .accessibilityAction(named: "Move up") { move(step, by: -1) }
+            .accessibilityAction(named: "Move down") { move(step, by: 1) }
         }
-        .buttonStyle(.plain)
-        .accessibilityValue(isDone(step) ? "done" : "not done")
-        .accessibilityHint(isDone(step) ? "Unchecks this step" : "Checks off this step")
+    }
+
+    /// Swipe-left delete, tinted in the board's marker colour rather than system red.
+    /// - Parameter step: the row's step.
+    private func deleteAction(_ step: Step) -> some View {
+        Button(role: .destructive) { delete(step) } label: { Label("Delete", systemImage: "trash") }
+            .tint(palette.markerDeep)
     }
 
     /// The row text: bold lead word, then plain detail. When done: struck through, led by
     /// the same checkmark as the "all done!" swoosh, inline so it wraps with the text.
-    /// - Parameter step: the step to render.
-    private func stepText(_ step: Step) -> Text {
+    /// - Parameters:
+    ///   - step: the step to render.
+    ///   - done: whether it's ticked this period.
+    private func stepText(_ step: Step, done: Bool) -> Text {
         let parts = StepText.split(step.text)
-        let done = isDone(step)
         var words = Text(parts.lead).font(fonts.font(.rowLead))
         if !parts.detail.isEmpty {
             // Concatenated Text keeps one wrapping paragraph (2 lines) with two fonts.
@@ -113,13 +139,26 @@ struct StepsView: View {
         return check + Text(" ") + words
     }
 
-    /// The inline "+ write another item" ghost row at the end of the list.
-    private var addRow: some View {
+    /// The inline "+ write another item" ghost row at the end of the list (a quiet note once
+    /// the list holds `CollectionLimits.stepsPerList` steps).
+    @ViewBuilder private var addRow: some View {
+        if CollectionLimits.hasRoom(theme.steps.count, under: CollectionLimits.stepsPerList) {
+            addField
+        } else {
+            Text("This list is full (\(CollectionLimits.stepsPerList) steps).")
+                .font(fonts.font(.caption))
+                .foregroundStyle(palette.ink2)
+        }
+    }
+
+    /// The text field that adds a step.
+    private var addField: some View {
         HStack(spacing: 10) {
             Image(systemName: "plus")
                 .foregroundStyle(palette.marker)
                 .accessibilityHidden(true)
             TextField("write another item", text: $newStepText)
+                .characterLimit($newStepText, TextLimits.step)
                 .font(fonts.font(.rowBody))
                 .foregroundStyle(palette.ink)
                 .focused($addFieldFocused)
@@ -138,6 +177,14 @@ struct StepsView: View {
                 Spacer()
                 Button { setSweep(complete: !done) } label: { SwooshLabel(done: done) }
                     .buttonStyle(.plain)
+                    .overlay {
+                        if celebrating {
+                            DoneBurst {
+                                celebrating = false
+                                offerDeleteIfOneTimeFinished()   // after the dots, not on top of them
+                            }
+                        }
+                    }
             }
             .padding(.horizontal, Metrics.xl)
             .padding(.vertical, Metrics.m)
@@ -179,22 +226,23 @@ struct StepsView: View {
 
     // MARK: Actions
 
-    /// Whether a step counts as done right now (resets per the list's repeat schedule).
-    /// Reads `now` (refreshed at midnight / on return) so rows re-render when the day changes.
-    private func isDone(_ step: Step) -> Bool {
-        theme.isDone(step.completedAt, now: max(now, Date()))
-    }
-
+    /// Ticks or unticks one step.
     private func toggle(_ step: Step) {
         theme.toggle(step)
         save()
         offerDeleteIfOneTimeFinished()
     }
 
+    /// "all done!" (with a burst of marker / chalk dots, unless Reduce Motion is on) /
+    /// "bring it back".
     private func setSweep(complete: Bool) {
-        if complete { theme.sweepComplete() } else { theme.resetCompletion() }
+        theme.setAllDone(complete)
         save()
-        offerDeleteIfOneTimeFinished()
+        if complete && !reduceMotion {
+            celebrating = true
+        } else {
+            offerDeleteIfOneTimeFinished()
+        }
     }
 
     /// A finished one-time list offers to delete itself (it won't come back).
@@ -202,124 +250,50 @@ struct StepsView: View {
         offeringDelete = theme.recurrence.kind == .oneTime && theme.isListComplete()
     }
 
-    // MARK: Long-press menu, edit, reorder
+    // MARK: Edit in place, reorder, delete, add
 
-    /// Long-press actions for one step.
-    /// - Parameter step: the pressed step.
-    @ViewBuilder private func stepMenu(_ step: Step) -> some View {
-        Button { beginEdit(step) } label: { Label("Edit text", systemImage: "pencil") }
-        Button(role: .destructive) { delete(step) } label: { Label("Delete", systemImage: "trash") }
-    }
-
-    private var isEditingStep: Binding<Bool> {
-        Binding(get: { editingStep != nil }, set: { if !$0 { editingStep = nil } })
-    }
-
+    /// Turns a row into a text field with its text, keyboard up.
     private func beginEdit(_ step: Step) {
+        commitEdit()   // finish any other row first
         editText = step.text
-        editingStep = step
+        editingStepID = step.id
     }
 
-    /// Saves the edited text (blank text keeps the old wording).
+    /// Saves the edited text (blank keeps the old wording) and turns the row back.
     private func commitEdit() {
-        let text = TextLimits.clamp(editText, to: TextLimits.step)
-        if let step = editingStep, !text.isEmpty {
-            step.text = text
-            step.updatedAt = .now
-            save()
-        }
-        editingStep = nil
+        guard let id = editingStepID else { return }
+        editingStepID = nil
+        if let step = theme.steps.first(where: { $0.id == id }), step.rename(to: editText) { save() }
     }
 
+    /// Deletes one step (swipe left).
     private func delete(_ step: Step) {
         modelContext.delete(step)
         save()
     }
 
-    /// Drag to reorder: rewrites sortOrder to match the new order.
+    /// Long-press and drag: rewrites the order to match.
     private func moveSteps(from source: IndexSet, to destination: Int) {
-        var ordered = theme.orderedSteps
-        ordered.move(fromOffsets: source, toOffset: destination)
-        for (index, step) in ordered.enumerated() { step.sortOrder = index }
+        theme.moveSteps(fromOffsets: source, toOffset: destination)
         save()
     }
 
-    /// Appends the typed step, keeps the field focused for the next one, refreshes the widget.
+    /// VoiceOver's Move up / Move down (dragging's accessible twin).
+    private func move(_ step: Step, by offset: Int) {
+        if theme.moveStep(step, by: offset) { save() }
+    }
+
+    /// Appends the typed step, keeps the field focused for the next one.
     private func addStep() {
-        let text = TextLimits.clamp(newStepText, to: TextLimits.step)
-        guard !text.isEmpty else { return }
-        let nextOrder = (theme.steps.map(\.sortOrder).max() ?? -1) + 1
-        theme.steps.append(Step(text: text, sortOrder: nextOrder))
-        theme.updatedAt = .now
+        guard theme.addStep(newStepText) != nil else { return }
         newStepText = ""
         addFieldFocused = true
         save()
     }
 
-    /// Swipe-to-delete for a step (removes that one step only).
-    private func deleteSteps(at offsets: IndexSet) {
-        let ordered = theme.orderedSteps
-        for index in offsets { modelContext.delete(ordered[index]) }
-        save()
-    }
-
+    /// Saves and rewrites the widget snapshot.
     private func save() {
         try? modelContext.save()
         WidgetDataBridge.refresh(from: modelContext)
-    }
-}
-
-// MARK: - SwooshLabel
-/// The "all done!" label; its done state goes quiet ("Done. Tap to bring it back.").
-struct SwooshLabel: View {
-    let done: Bool
-
-    var body: some View {
-        MarkerSwooshLabel(title: done ? "Done. Tap to bring it back." : "all done!",
-                          showsCheck: !done, quiet: done)
-    }
-}
-
-// MARK: - MarkerSwooshLabel
-/// Handwritten action text with a drawn underline, like a note on the board. The app's
-/// one button style for primary actions ("all done!", "Create a list").
-struct MarkerSwooshLabel: View {
-    @Environment(\.palette) private var palette
-    @Environment(\.fonts) private var fonts
-    let title: String
-    var showsCheck = false
-    /// Smaller, ink2 text and a faded swoosh (e.g. the done state).
-    var quiet = false
-
-    var body: some View {
-        HStack(spacing: 5) {
-            if showsCheck {
-                Image(systemName: "checkmark").font(.system(size: 12, weight: .heavy))
-            }
-            Text(title).font(quiet ? fonts.font(.caption) : fonts.font(.button))
-        }
-        .foregroundStyle(quiet ? palette.ink2 : palette.marker)
-        .padding(.bottom, 9)
-        .overlay(alignment: .bottom) {
-            Swoosh()
-                .stroke(style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
-                .foregroundStyle(quiet ? palette.ink2.opacity(0.35) : palette.marker)
-                .frame(height: 8)
-        }
-        .contentShape(Rectangle())
-    }
-}
-
-/// A slightly wavy hand-drawn underline spanning its rect.
-struct Swoosh: Shape {
-    /// Path from lower-left to upper-right with a gentle S-curve.
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let w = rect.width, h = rect.height
-        path.move(to: CGPoint(x: rect.minX + w * 0.02, y: rect.minY + h * 0.67))
-        path.addCurve(to: CGPoint(x: rect.minX + w * 0.98, y: rect.minY + h * 0.33),
-                      control1: CGPoint(x: rect.minX + w * 0.25, y: rect.minY + h * 0.22),
-                      control2: CGPoint(x: rect.minX + w * 0.55, y: rect.minY + h * 0.89))
-        return path
     }
 }

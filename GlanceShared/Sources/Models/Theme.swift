@@ -1,24 +1,6 @@
 import Foundation
 import SwiftData
 
-// MARK: - ThemeCompletionStyle
-/// Legacy: stored only so existing stores still migrate. No screen offers it and nothing reads
-/// it; every list completes the same way (tap rows, or "all done!" ticks them all).
-enum ThemeCompletionStyle: String, Codable, CaseIterable, Identifiable {
-    case sweep
-    case perItem
-
-    var id: String { rawValue }
-
-    /// Human-readable label for the settings/edit UI.
-    var label: String {
-        switch self {
-        case .sweep:   return "Clear whole list"
-        case .perItem: return "Check off each step"
-        }
-    }
-}
-
 // MARK: - Theme
 /// A broad container for one routine or context (e.g. "Take meds", "Leave the house").
 @Model
@@ -33,8 +15,6 @@ final class Theme: Identifiable {
     var updatedAt: Date
 
     // Defaults keep existing stored data migratable.
-    var completionStyle: ThemeCompletionStyle = ThemeCompletionStyle.sweep
-    var lastSweptAt: Date? = nil          // when the list was last cleared as a whole
     var categories: [GlanceCategory] = [] // plain side of GlanceCategory.themes many-to-many
 
     // Repeats (stored as primitives so SwiftData migrates them; see `recurrence`).
@@ -56,7 +36,6 @@ final class Theme: Identifiable {
         iconToken: String = ThemeIcons.default,
         iconEmoji: String = "⭐️",
         sortOrder: Int = 0,
-        completionStyle: ThemeCompletionStyle = .sweep,
         steps: [Step] = []
     ) {
         self.id = id
@@ -65,7 +44,6 @@ final class Theme: Identifiable {
         self.iconToken = iconToken
         self.iconEmoji = iconEmoji
         self.sortOrder = sortOrder
-        self.completionStyle = completionStyle
         self.createdAt = Date()
         self.updatedAt = Date()
         self.steps = steps
@@ -75,9 +53,12 @@ final class Theme: Identifiable {
     /// The cycle for "every N days" counts from `repeatAnchor` (or the creation day).
     var recurrence: Recurrence {
         get {
+            // Stored values are clamped to what the editor allows, so a damaged store can't
+            // produce a rule that never occurs.
             Recurrence(kind: Recurrence.Kind(rawValue: repeatKind) ?? .daily,
-                       weekdays: Set(repeatWeekdays), dayOfMonth: repeatDayOfMonth,
-                       interval: repeatInterval,
+                       weekdays: Set(repeatWeekdays.filter { (1...7).contains($0) }),
+                       dayOfMonth: min(max(repeatDayOfMonth, 1), 31),
+                       interval: min(max(repeatInterval, 1), 30),
                        anchor: min(repeatAnchor ?? createdAt, Date()))   // a clock set ahead can't stall it
         }
         set {

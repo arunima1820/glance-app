@@ -2,20 +2,20 @@ import SwiftUI
 import SwiftData
 
 // MARK: - SettingsView  (Screen D: the Settings tab)
-/// Appearance, title style, optional features (all off) and data/about, as a native `Form`
+/// Appearance, title style, and data/about, as a native `Form`
 /// on the paper surface. Choices persist in `@AppStorage`; ContentView applies them app-wide.
 struct SettingsView: View {
     @Environment(\.palette) private var palette
     @Environment(\.fonts) private var fonts
 
-    @AppStorage("glance.appearance") private var appearance: AppAppearance = .system
+    @AppStorage(StorageKeys.appearance) private var appearance: AppAppearance = .system
     @AppStorage(WidgetDataBridge.fontThemeKey, store: WidgetDataBridge.defaults) private var fontThemeID: FontThemeID = FontThemes.default
+    @AppStorage(StorageKeys.lockScreenHidesDetails, store: WidgetDataBridge.defaults) private var hideLockScreenDetails = false
 
     var body: some View {
         NavigationStack {
             Form {
                 appearanceSection
-                optionalFeaturesSection
                 dataSection
                 aboutSection
             }
@@ -34,6 +34,7 @@ struct SettingsView: View {
 
     // MARK: Sections
 
+    /// Look (paper / chalkboard / match iPhone) and title style.
     private var appearanceSection: some View {
         Section {
             Picker("Look", selection: $appearance) {
@@ -50,48 +51,29 @@ struct SettingsView: View {
         .listRowBackground(palette.card)
     }
 
-    private var optionalFeaturesSection: some View {
-        Section {
-            plannedToggle("\"You are here\" marker", detail: "Gently highlights your current step.")
-            plannedToggle("Gentle reminders", detail: "Optional nudge at a time you choose.")
-        } header: {
-            Text("Optional features")
-        } footer: {
-            Text("Planned for a future update. Everything optional is off by default, so nothing will nag you.")
-        }
-        .listRowBackground(palette.card)
-    }
-
+    /// The privacy promise, and keeping lists off the Lock Screen.
     private var dataSection: some View {
         Section {
+            Toggle("Hide details on Lock Screen", isOn: $hideLockScreenDetails)
+                .tint(palette.avocado)
+                .onChange(of: hideLockScreenDetails) { WidgetDataBridge.reloadWidgets() }
             Text("Everything stays private on your device. No developer server sees it.")
                 .font(fonts.font(.caption))
                 .foregroundStyle(palette.ink2)
         } header: {
             Text("Your data")
+        } footer: {
+            Text("When on, the Lock Screen widget shows only how many steps are left, never the list or step names.")
         }
         .listRowBackground(palette.card)
     }
 
+    /// App version.
     private var aboutSection: some View {
         Section("About") {
             LabeledContent("Version", value: Bundle.main.appVersionString)
         }
         .listRowBackground(palette.card)
-    }
-
-    /// A disabled placeholder toggle with a one-line explanation.
-    /// - Parameters:
-    ///   - title: the feature name.
-    ///   - detail: what it would do.
-    private func plannedToggle(_ title: String, detail: String) -> some View {
-        Toggle(isOn: .constant(false)) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(fonts.font(.rowBody)).foregroundStyle(palette.ink)
-                Text(detail).font(fonts.font(.caption)).foregroundStyle(palette.ink2)
-            }
-        }
-        .disabled(true)
     }
 }
 

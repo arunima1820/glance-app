@@ -14,7 +14,8 @@ struct Palette: Sendable, Equatable {
     let avocado: Color      // secondary accent / magnets
     let mustard: Color      // highlight / washi tape
     let sky: Color          // accent
-    let hairline: Color     // row dividers
+    let hairline: Color     // row dividers (soft; decorative)
+    let control: Color      // outlines of interactive controls (search box, chips, day dots): ≥3:1 on card
 }
 
 // MARK: - PaletteScheme
@@ -62,7 +63,8 @@ enum Palettes {
             avocado:    Color(hex: "#6B7B3A"),
             mustard:    Color(hex: "#D9A441"),
             sky:        Color(hex: "#5E86A3"),
-            hairline:   Color(hex: "#2B2A26").opacity(0.13)
+            hairline:   Color(hex: "#2B2A26").opacity(0.13),
+            control:    Color(hex: "#8C7F64")    // 3.9:1 on card, 3.3:1 on paper
         ),
         dark: Palette(
             paper:      Color(hex: "#243029"),
@@ -75,7 +77,8 @@ enum Palettes {
             avocado:    Color(hex: "#A7C58A"),
             mustard:    Color(hex: "#E6C878"),
             sky:        Color(hex: "#9BC2D6"),
-            hairline:   Color(hex: "#ECE7D8").opacity(0.15)
+            hairline:   Color(hex: "#ECE7D8").opacity(0.15),
+            control:    Color(hex: "#808C79")    // 3.5:1 on card, 3.9:1 on paper
         )
     )
 }

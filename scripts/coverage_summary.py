@@ -13,7 +13,6 @@ AREAS = [
     ("Store",   "/GlanceShared/Sources/Store/",  80, True),
     ("Models",  "/GlanceShared/Sources/Models/", 80, True),
     ("Design",  "/GlanceShared/Sources/Design/", 70, True),
-    ("Starter", "/GlanceShared/Sources/SampleData/", 80, True),
     ("Views",   "/Glance/Sources/",               0, False),
 ]
 

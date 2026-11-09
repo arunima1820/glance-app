@@ -4,11 +4,8 @@ import Foundation
 /// Experiment-worthy knobs in one struct. Views read these instead of hard-coding
 /// behavior, so an A/B arm or remote toggle flips a value here, not call sites.
 struct FeatureFlags: Sendable, Equatable {
-    var defaultCompletionStyle: ThemeCompletionStyle = .sweep
-    var themeIconsOnByDefault: Bool = true
+    /// Shows the Food tab.
     var groceriesTabVisible: Bool = true
-    var survivalRecipesEnabled: Bool = false   // v2 (ML)
-    var cameraFoodEnabled: Bool = false        // v2 (ML)
 
     static let `default` = FeatureFlags()
 }
@@ -20,6 +17,7 @@ protocol FeatureFlagProvider: Sendable {
     var flags: FeatureFlags { get }
 }
 
+/// The flags compiled into the app.
 struct StaticFlags: FeatureFlagProvider {
     let flags: FeatureFlags
     init(_ flags: FeatureFlags = .default) { self.flags = flags }

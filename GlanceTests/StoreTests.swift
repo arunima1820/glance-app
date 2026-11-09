@@ -20,7 +20,7 @@ private final class GroupContainerStub: FileManager, @unchecked Sendable {
 
 // MARK: - StoreTests
 // Covers: GlanceStore.swift (makeContainer(inMemory:), appGroupIdentifier,
-// ensureStoreDirectoryExists(fileManager:)) and the Theme.steps cascade rule in Theme.swift.
+// ensureStoreDirectoryExists(fileManager:), moveAside, isReadable) and the Theme.steps cascade rule in Theme.swift.
 
 final class StoreTests: XCTestCase {
 
@@ -94,6 +94,29 @@ final class StoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: path, isDirectory: &isDir))
         XCTAssertTrue(isDir.boolValue)
         XCTAssertNoThrow(try GlanceStore.ensureStoreDirectoryExists(fileManager: fileManager))
+    }
+
+    // MARK: Recovery (moveAside / isReadable)
+
+    func testMoveAsideRenamesStoreAndCompanions() throws {
+        let root = makeTempRoot()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let store = root.appending(path: "default.store")
+        for suffix in ["", "-wal", "-shm"] {
+            try Data("x".utf8).write(to: URL(fileURLWithPath: store.path(percentEncoded: false) + suffix))
+        }
+        GlanceStore.moveAside(store, now: Date(timeIntervalSince1970: 42))
+        let names = try FileManager.default.contentsOfDirectory(atPath: root.path(percentEncoded: false)).sorted()
+        XCTAssertEqual(names, ["default.store-shm.broken-42", "default.store-wal.broken-42", "default.store.broken-42"])
+    }
+
+    func testOnlyAnExistingReadableFileCountsAsReadable() throws {
+        let root = makeTempRoot()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let store = root.appending(path: "default.store")
+        XCTAssertFalse(GlanceStore.isReadable(store))
+        try Data("SQLite format 3".utf8).write(to: store)
+        XCTAssertTrue(GlanceStore.isReadable(store))
     }
 
     func testEnsureStoreDirectoryIsNoOpWithoutGroupContainer() {

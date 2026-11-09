@@ -1,0 +1,62 @@
+{
+  "about": "Glance test data. Debug builds only; never bundled in the app. Dates are relative to the day you load it (daysFromNow, addedDaysAgo). Load with scripts/load-test-data.sh.",
+  "lists": [
+    {
+      "name": "Leave the house",
+      "icon": "leave",
+      "repeat": "daily",
+      "steps": ["Keys from the bowl by the door", "Phone off the charger", "Work badge clipped to the bag", "Lock the deadbolt, not just the handle"],
+      "doneSteps": [0]
+    },
+    {
+      "name": "Morning meds",
+      "icon": "meds",
+      "repeat": "daily",
+      "steps": ["Glass of water", "Take tablets with breakfast", "Vitamin D"]
+    },
+    {
+      "name": "Bins out",
+      "icon": "clean",
+      "repeat": "weekly",
+      "weekdays": [5],
+      "steps": ["Wheel the black bin to the curb", "Recycling on top", "Bring them back in after pickup"]
+    },
+    {
+      "name": "Evening wind-down",
+      "icon": "night",
+      "repeat": "weekdays",
+      "steps": ["Phone on the charger", "Lay out clothes for tomorrow", "Lights off by 11"],
+      "doneSteps": [0, 1, 2]
+    },
+    {
+      "name": "Pack for the trip",
+      "icon": "work",
+      "repeat": "oneTime",
+      "steps": ["Passport", "Chargers", "Toothbrush", "Snacks for the train"],
+      "doneSteps": [0, 1]
+    },
+    {
+      "name": "Water the plants",
+      "icon": "water",
+      "repeat": "everyNDays",
+      "interval": 3,
+      "steps": ["Kitchen herbs", "Balcony pots"]
+    }
+  ],
+  "food": [
+    { "name": "Chicken fried rice", "where": "fridge", "kinds": ["prepared"], "labels": ["Chicken", "Rice"], "daysFromNow": 2, "addedDaysAgo": 1, "details": "Cooked Sunday, in the blue tub" },
+    { "name": "Eggs", "where": "fridge", "kinds": ["ingredient"], "labels": ["Eggs"], "daysFromNow": 0, "addedDaysAgo": 20 },
+    { "name": "Greek yogurt", "where": "fridge", "kinds": ["snack"], "labels": ["Yogurt"], "daysFromNow": 5, "addedDaysAgo": 2 },
+    { "name": "Jasmine rice", "where": "fridge", "kinds": ["prepared"], "labels": ["Rice"], "daysFromNow": -1, "addedDaysAgo": 4 },
+    { "name": "Shrimp", "where": "fridge", "kinds": ["thaw"], "labels": ["Shrimp"], "daysFromNow": 1, "addedDaysAgo": 0, "details": "Moved from the freezer last night" },
+    { "name": "Oat milk", "where": "fridge", "kinds": ["drink"], "labels": ["Juice"], "daysFromNow": 6, "addedDaysAgo": 3 },
+    { "name": "Orange juice", "where": "fridge", "kinds": ["drink"], "labels": ["Juice"], "daysFromNow": 4, "addedDaysAgo": 2 },
+    { "name": "Spinach", "where": "fridge", "kinds": ["ingredient"], "labels": ["Veggie"], "daysFromNow": 2, "addedDaysAgo": 1 },
+    { "name": "Sourdough", "where": "pantry", "kinds": ["snack"], "labels": ["Bread"], "daysFromNow": 3, "addedDaysAgo": 1 },
+    { "name": "Peanut butter", "where": "pantry", "kinds": ["snack"], "labels": ["Spread"], "daysFromNow": 40, "addedDaysAgo": 10 },
+    { "name": "Chickpeas", "where": "pantry", "kinds": ["canned"], "labels": [], "daysFromNow": 300, "addedDaysAgo": 30 },
+    { "name": "Tuna", "where": "pantry", "kinds": ["canned"], "labels": ["Fish"], "daysFromNow": 10, "addedDaysAgo": 200 },
+    { "name": "Frozen peas", "where": "freezer", "kinds": ["ingredient"], "labels": ["Veggie"], "daysFromNow": 80, "addedDaysAgo": 10 },
+    { "name": "Beef curry", "where": "freezer", "kinds": ["prepared"], "labels": ["Curry", "Beef"], "daysFromNow": 45, "addedDaysAgo": 15, "details": "Two portions" }
+  ]
+}

@@ -3,7 +3,8 @@ import XCTest
 
 // MARK: - WidgetDataBridgeTests
 // Covers: WidgetDataBridge (readSnapshotIfWritten, writeSnapshot, snapshot(of:now:calendar:),
-// pin(_:now:in:), pinState(in:), readFood(from:)), WidgetPin, FoodSnapshot.
+// pin(_:now:in:), pinState(in:), readFood(from:), writeFood(_:now:to:), widgetSnapshot(of:), capped,
+// hidesLockScreenDetails(in:)), WidgetPin, FoodSnapshot.
 
 final class WidgetDataBridgeTests: XCTestCase {
 
@@ -93,12 +94,63 @@ final class WidgetDataBridgeTests: XCTestCase {
     }
 
     func testWrittenFoodDecodes() throws {
-        let milk = FoodSnapshot(id: UUID(), name: "Milk", useByDate: date(4))
+        let milk = FoodSnapshot(id: UUID(), name: "Milk", useBy: date(4))
         store.set(try JSONEncoder().encode([milk]), forKey: WidgetDataBridge.foodKey)
         let food = WidgetDataBridge.readFood(from: store)
         XCTAssertEqual(food.map(\.id), [milk.id])
         XCTAssertEqual(food.first?.name, "Milk")
-        XCTAssertEqual(food.first?.useByDate, date(4))
+        XCTAssertEqual(food.first?.useBy, date(4))
+        XCTAssertNil(food.first?.storage)
+    }
+
+    func testWriteFoodRoundTripsWithoutDescription() {
+        let rice = FoodItem(name: "Rice", details: "Blue tub", storage: .fridge, kinds: [.prepared],
+                            labels: ["Rice"], useBy: date(5), addedAt: date(2))
+        let beans = FoodItem(name: "Beans", storage: .pantry, kinds: [.canned], useBy: date(3))
+        WidgetDataBridge.writeFood([rice, beans], now: date(2), to: store)
+
+        let food = WidgetDataBridge.readFood(from: store)
+        XCTAssertEqual(food.map(\.name), ["Beans", "Rice"], "soonest first")
+        XCTAssertNil(food[1].details)
+        XCTAssertEqual(food[1].useBy, date(5))
+        XCTAssertEqual(food[1].kindList, [.prepared])
+        XCTAssertEqual(food[0].useBy, date(3), "canned food keeps its best-by date")
+    }
+
+    func testWidgetsAreOnlySentFoodTheyCanShow() {
+        let far = FoodItem(name: "Far", useBy: date(2).addingTimeInterval(86_400 * 200))
+        let many = (0..<200).map { FoodItem(name: "F\($0)", useBy: date(3)) }
+        WidgetDataBridge.writeFood([far] + many, now: date(2), to: store)
+        let food = WidgetDataBridge.readFood(from: store)
+        XCTAssertEqual(food.count, WidgetDataBridge.widgetFoodLimit)
+        XCTAssertFalse(food.contains { $0.name == "Far" })
+    }
+
+    func testListSnapshotIsCappedButKeepsThePinnedList() {
+        let lists = (0..<30).map { i in
+            ThemeSnapshot(id: UUID(), name: "L\(i)", colorToken: "sage", iconEmoji: "x",
+                          steps: (0..<50).map { StepSnapshot(id: UUID(), text: "s\($0)", iconEmoji: nil) })
+        }
+        let capped = WidgetDataBridge.capped(lists, pinned: lists[25].id)
+        XCTAssertEqual(capped.count, WidgetDataBridge.widgetListLimit + 1)
+        XCTAssertEqual(capped.last?.id, lists[25].id)
+        XCTAssertTrue(capped.allSatisfy { $0.steps.count == WidgetDataBridge.widgetStepLimit })
+    }
+
+    func testLockScreenDetailsShowUnlessHidden() {
+        XCTAssertFalse(WidgetDataBridge.hidesLockScreenDetails(in: store))
+        store.set(true, forKey: StorageKeys.lockScreenHidesDetails)
+        XCTAssertTrue(WidgetDataBridge.hidesLockScreenDetails(in: store))
+    }
+
+    func testUnreadableFoodReadsAsEmpty() {
+        store.set(Data("garbage".utf8), forKey: WidgetDataBridge.foodKey)
+        XCTAssertTrue(WidgetDataBridge.readFood(from: store).isEmpty)
+    }
+
+    func testFoodWidgetSnapshotCapsLongName() {
+        let item = FoodItem(name: String(repeating: "x", count: 500))
+        XCTAssertEqual(WidgetDataBridge.widgetSnapshot(of: item).name.count, TextLimits.name)
     }
 
     // MARK: snapshot(of:now:calendar:)

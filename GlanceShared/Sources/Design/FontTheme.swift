@@ -13,7 +13,8 @@ enum FontRole: Sendable, CaseIterable {
     case caption       // sublines, hints
     case button        // primary action label
     case widgetTitle   // widget list / section name
-    case widgetBody    // widget step text: deliberately small and tight
+    case widgetBody    // small widget text: deliberately small and tight
+    case widgetBodyRoomy   // medium / large widget text: the size of app names on the home screen
 }
 
 // MARK: - FontTheme
@@ -86,7 +87,7 @@ struct MarkerFontTheme: FontTheme {
         case .cardTitle:   return custom(Self.tileFace, 16, relativeTo: .callout)        // same size as row text
         case .button:      return custom(Self.tileFace, 19, relativeTo: .headline)
         case .widgetTitle: return custom(Self.tileFace, 13, relativeTo: .caption)
-        default:           return SystemFontTheme().font(role)   // body roles are shared
+        default:           return SystemFontTheme.native(role, design: .rounded)   // body roles: SF Pro Rounded
         }
     }
 
@@ -97,7 +98,9 @@ struct MarkerFontTheme: FontTheme {
 }
 
 // MARK: - SystemFontTheme (alternate, no bundled font)
-/// A fully native fallback — useful for an A/B arm or if the bundled faces are unavailable.
+/// "System" in Settings: every role in Apple's own San Francisco face (SF Pro), standard iOS
+/// text styles and weights, no hand lettering at all. Also supplies the body roles to the
+/// Marker theme, which reads them in SF Pro Rounded.
 struct SystemFontTheme: FontTheme {
     let id: FontThemeID = .system
     let displayName = "System"
@@ -105,17 +108,26 @@ struct SystemFontTheme: FontTheme {
     /// Font for a role.
     /// - Parameter role: the semantic text role.
     func font(_ role: FontRole) -> Font {
+        Self.native(role, design: .default)
+    }
+
+    /// The native font for a role in a given system design (default or rounded).
+    /// - Parameters:
+    ///   - role: the semantic text role.
+    ///   - design: `.default` (SF Pro) or `.rounded` (SF Pro Rounded).
+    static func native(_ role: FontRole, design: Font.Design) -> Font {
         switch role {
-        case .appTitle:    return .system(.largeTitle, design: .rounded).weight(.heavy)
-        case .screenTitle: return .system(.callout, design: .rounded).weight(.bold)
-        case .listTitle:   return .system(.callout, design: .rounded).weight(.bold)
-        case .rowLead:     return .system(.callout, design: .rounded).weight(.semibold)
-        case .rowBody:     return .system(.callout, design: .rounded)
-        case .cardTitle:   return .system(.callout, design: .rounded).weight(.bold)
-        case .caption:     return .system(.caption, design: .rounded)
-        case .button:      return .system(.headline, design: .rounded)
-        case .widgetTitle: return .system(.caption, design: .rounded).weight(.bold)
-        case .widgetBody:  return .system(size: 11, design: .rounded)   // fixed: widgets are glanced, not read
+        case .appTitle:        return .system(.largeTitle, design: design).weight(.bold)
+        case .screenTitle:     return .system(.headline, design: design)
+        case .listTitle:       return .system(.callout, design: design).weight(.semibold)
+        case .rowLead:         return .system(.callout, design: design).weight(.semibold)
+        case .rowBody:         return .system(.callout, design: design)
+        case .cardTitle:       return .system(.callout, design: design).weight(.semibold)
+        case .caption:         return .system(.caption, design: design)
+        case .button:          return .system(.headline, design: design)
+        case .widgetTitle:     return .system(.caption, design: design).weight(.semibold)
+        case .widgetBody:      return .system(size: 11, design: design)   // fixed: widgets are glanced, not read
+        case .widgetBodyRoomy: return .system(size: 12, design: design)   // home-screen app-name size
         }
     }
 }

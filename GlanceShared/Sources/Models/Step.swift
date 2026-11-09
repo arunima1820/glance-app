@@ -69,12 +69,58 @@ enum StepText {
 enum TextLimits {
     static let name = 80
     static let step = 200
+    /// A food's description.
+    static let note = 300
 
-    /// Trims whitespace and cuts to `limit` characters.
+    /// Cleans, trims and cuts user text to `limit` characters (see `clean`).
     /// - Parameters:
     ///   - text: raw user input.
     ///   - limit: maximum characters to keep.
-    static func clamp(_ text: String, to limit: Int) -> String {
-        String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
+    ///   - allowsNewlines: keep line breaks (descriptions); otherwise they become spaces.
+    static func clamp(_ text: String, to limit: Int, allowsNewlines: Bool = false) -> String {
+        let cleaned = clean(text, allowsNewlines: allowsNewlines)
+        return String(cleaned.trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
     }
+
+    /// Removes characters that can hide or flip text on tiles, widgets and the Lock Screen:
+    /// control characters (tabs and line breaks become spaces unless allowed), right-to-left
+    /// overrides / isolates, zero-width spaces and byte-order marks. Emoji joiners stay.
+    /// - Parameters:
+    ///   - text: raw user input.
+    ///   - allowsNewlines: keep "\n" line breaks.
+    static func clean(_ text: String, allowsNewlines: Bool = false) -> String {
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            if invisible.contains(scalar.value) { continue }
+            guard scalar.properties.generalCategory == .control else { scalars.append(scalar); continue }
+            if scalar == "\n" && allowsNewlines {
+                scalars.append(scalar)
+            } else if scalar == "\n" || scalar == "\t" || scalar == "\r" {
+                scalars.append(" ")
+            }
+        }
+        return String(scalars)
+    }
+
+    /// Direction overrides / isolates, zero-width space, word joiner, byte-order mark, and the
+    /// left-to-right / right-to-left marks.
+    private static let invisible: Set<UInt32> = Set<UInt32>(0x202A...0x202E)
+        .union(0x2066...0x2069)
+        .union([0x200B, 0x200E, 0x200F, 0x2060, 0xFEFF])
+}
+
+// MARK: - CollectionLimits
+/// Most lists, steps and foods the app holds. Every way of adding stops here (buttons hide,
+/// saves refuse), so nothing (a stuck key, a script driving the screen, a future import) can
+/// grow the store until the app or its widgets slow down or run out of memory.
+enum CollectionLimits {
+    static let lists = 100
+    static let stepsPerList = 100
+    static let foods = 500
+
+    /// Whether one more fits.
+    /// - Parameters:
+    ///   - count: how many there are now.
+    ///   - limit: the cap.
+    static func hasRoom(_ count: Int, under limit: Int) -> Bool { count < limit }
 }

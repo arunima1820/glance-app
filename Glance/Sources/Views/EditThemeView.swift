@@ -2,14 +2,13 @@ import SwiftUI
 import SwiftData
 
 // MARK: - EditThemeView  (Screen C: create or edit a list)
-/// A list's settings only: name, icon, repeats, and delete. Steps live in the list itself
+/// A list's settings only: name, icon, repeats, a (not yet active) gentle reminder, and delete. Steps live in the list itself
 /// (add with the inline row, swipe to delete). Native `Form` half-sheet.
 struct EditThemeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.palette) private var palette
     @Environment(\.fonts) private var fonts
-    @EnvironmentObject private var design: DesignConfig
 
     /// nil = creating a new list; non-nil = editing this one.
     let theme: Theme?
@@ -18,7 +17,6 @@ struct EditThemeView: View {
 
     @State private var name = ""
     @State private var iconToken = ThemeIcons.default
-    @State private var completionStyle = ThemeCompletionStyle.sweep
     @State private var recurrence = Recurrence()
     @State private var showingDeleteConfirm = false
     @State private var loaded = false
@@ -32,6 +30,7 @@ struct EditThemeView: View {
                 nameSection
                 iconSection
                 RepeatEditor(rule: $recurrence)
+                reminderSection
                 if isEditing { deleteSection }
             }
             .scrollContentBackground(.hidden)
@@ -39,15 +38,12 @@ struct EditThemeView: View {
             .navigationTitle(isEditing ? "Edit list" : "New list")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
-            .confirmationDialog("Delete \"\(theme?.name ?? "")\"?", isPresented: $showingDeleteConfirm,
-                                titleVisibility: .visible) {
-                Button("Delete", role: .destructive, action: deleteTheme)
-                Button("Cancel", role: .cancel) {}
-            } message: { Text("This cannot be undone.") }
+            .confirmDelete("Delete \u{201C}\(theme?.name ?? "")\u{201D}?", isPresented: $showingDeleteConfirm,
+                           message: "You can restore it from Recently removed.", onDelete: deleteTheme)
             .onAppear(perform: loadFromTheme)
         }
         .presentationDetents([.medium, .large])
-        .tint(palette.marker)
+        .tint(palette.markerDeep)   // small text (tab labels, Cancel) needs 4.5:1
     }
 
     // MARK: Sections
@@ -55,6 +51,7 @@ struct EditThemeView: View {
     private var nameSection: some View {
         Section("Name") {
             TextField("e.g. Take meds", text: $name)
+                .characterLimit($name, TextLimits.name)
                 .font(fonts.font(.rowBody))
                 .listRowBackground(palette.card)
         }
@@ -67,6 +64,15 @@ struct EditThemeView: View {
         }
     }
 
+    /// A gentle nudge for this list: shown greyed out until reminders are built.
+    private var reminderSection: some View {
+        Section {
+            PlannedToggle(title: "Gentle reminder", detail: "A soft nudge at a time you choose. Coming later.")
+        }
+        .listRowBackground(palette.card)
+    }
+
+    /// Delete (editing only).
     private var deleteSection: some View {
         Section {
             Button(role: .destructive) { showingDeleteConfirm = true } label: {
@@ -105,22 +111,17 @@ struct EditThemeView: View {
     private func loadFromTheme() {
         guard !loaded else { return }
         loaded = true
-        guard let theme else {
-            completionStyle = design.flags.defaultCompletionStyle
-            return
-        }
+        guard let theme else { return }
         name = theme.name
         iconToken = theme.iconToken
-        completionStyle = theme.completionStyle
         recurrence = theme.recurrence
     }
 
     /// Writes the settings back (steps are never touched here), then refreshes the widget.
     private func save() {
-        let target = theme ?? insertNewTheme()
+        guard let target = theme ?? insertNewTheme() else { dismiss(); return }   // board full
         target.name = TextLimits.clamp(name, to: TextLimits.name)
         target.iconToken = iconToken
-        target.completionStyle = completionStyle
         target.changeRecurrence(to: recurrence)   // clears ticks the old rule had expired
         target.updatedAt = .now
         try? modelContext.save()
@@ -128,8 +129,11 @@ struct EditThemeView: View {
         dismiss()
     }
 
-    private func insertNewTheme() -> Theme {
-        let nextOrder = ((try? modelContext.fetch(FetchDescriptor<Theme>()))?.map(\.sortOrder).max() ?? -1) + 1
+    /// Adds a new, empty list for Save to fill in, or nil if the board is full.
+    private func insertNewTheme() -> Theme? {
+        let all = (try? modelContext.fetch(FetchDescriptor<Theme>())) ?? []
+        guard CollectionLimits.hasRoom(all.count, under: CollectionLimits.lists) else { return nil }
+        let nextOrder = (all.map(\.sortOrder).max() ?? -1) + 1
         let created = Theme(name: name, sortOrder: nextOrder)
         modelContext.insert(created)
         return created
@@ -164,7 +168,7 @@ struct IconPicker: View {
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(selected ? palette.marker : palette.ink)
                         .frame(width: 44, height: 44)
-                        .overlay(Circle().stroke(selected ? palette.marker : palette.hairline, lineWidth: 2))
+                        .overlay(Circle().stroke(selected ? palette.marker : palette.control, lineWidth: 2))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(icon.displayName + (selected ? ", selected" : ""))
@@ -270,7 +274,7 @@ struct WeekdayDots: View {
                         .foregroundStyle(on ? palette.onMarker : palette.ink2)
                         .frame(width: 32, height: 32)
                         .background(on ? palette.markerDeep : Color.clear, in: Circle())
-                        .overlay(Circle().stroke(on ? Color.clear : palette.hairline, lineWidth: 1))
+                        .overlay(Circle().stroke(on ? Color.clear : palette.control, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Calendar.current.weekdaySymbols[day - 1])

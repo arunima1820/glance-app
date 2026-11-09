@@ -43,6 +43,23 @@ final class PaletteSchemeTests: XCTestCase {
         }
     }
 
+    /// Chalkboard pills: solid (expired, today) use board-coloured text on chalk; outlined
+    /// (days, weeks) use chalk-coloured text on the card. All need 4.5:1 (small text).
+    func testChalkboardPillsMeetWCAGContrast() {
+        let p = Palettes.scheme(Palettes.default).dark
+        let pairs: [(String, Color, Color)] = [
+            ("expired: paper on marker", p.paper, p.marker),
+            ("today: paper on mustard", p.paper, p.mustard),
+            ("days: mustard on card", p.mustard, p.card),
+            ("weeks: avocado on card", p.avocado, p.card),
+            ("days: mustard on paper (widget)", p.mustard, p.paper),
+            ("weeks: avocado on paper (widget)", p.avocado, p.paper),
+        ]
+        for (name, fg, bg) in pairs {
+            XCTAssertGreaterThanOrEqual(contrastRatio(fg, bg), 4.5, name)
+        }
+    }
+
     // MARK: Helpers
 
     private func assertContrast(_ p: Palette, label: String, file: StaticString = #filePath, line: UInt = #line) {
@@ -52,6 +69,10 @@ final class PaletteSchemeTests: XCTestCase {
             ("ink2 on paper", p.ink2, p.paper, 4.5),
             ("ink2 on card", p.ink2, p.card, 4.5),
             ("onMarker on markerDeep", p.onMarker, p.markerDeep, 4.5),
+            ("markerDeep (small text) on paper", p.markerDeep, p.paper, 4.5),
+            ("markerDeep (small text) on card", p.markerDeep, p.card, 4.5),
+            ("control outline on card", p.control, p.card, 3),
+            ("control outline on paper", p.control, p.paper, 3),
         ]
         for pair in pairs {
             let ratio = contrastRatio(pair.fg, pair.bg)

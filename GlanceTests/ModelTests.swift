@@ -14,8 +14,6 @@ final class ThemeModelTests: XCTestCase {
         XCTAssertEqual(theme.colorToken, "butter")
         XCTAssertEqual(theme.iconToken, ThemeIcons.default)
         XCTAssertEqual(theme.recurrence.kind, .daily)
-        XCTAssertEqual(theme.completionStyle, .sweep)
-        XCTAssertNil(theme.lastSweptAt)
         XCTAssertTrue(theme.steps.isEmpty)
     }
 
@@ -46,6 +44,16 @@ final class ThemeModelTests: XCTestCase {
         XCTAssertEqual(theme.recurrence.weekdays, [3, 5])
         XCTAssertEqual(theme.recurrence.dayOfMonth, 12)
         XCTAssertEqual(theme.recurrence.interval, 4)
+    }
+
+    func testDamagedStoredRepeatValuesAreClamped() {
+        let theme = Theme(name: "x")
+        theme.repeatWeekdays = [0, 3, 12]
+        theme.repeatDayOfMonth = 99
+        theme.repeatInterval = -4
+        XCTAssertEqual(theme.recurrence.weekdays, [3])
+        XCTAssertEqual(theme.recurrence.dayOfMonth, 31)
+        XCTAssertEqual(theme.recurrence.interval, 1)
     }
 
     func testUnknownRepeatKindFallsBackToDaily() {
@@ -139,13 +147,35 @@ final class StepTextTests: XCTestCase {
 }
 
 // MARK: - TextLimitsTests
-// Covers: Step.swift (TextLimits.clamp).
+// Covers: Step.swift (TextLimits.clamp, TextLimits.clean, CollectionLimits).
 
 final class TextLimitsTests: XCTestCase {
 
     func testClampTrimsAndCuts() {
         XCTAssertEqual(TextLimits.clamp("  Keys  ", to: 80), "Keys")
         XCTAssertEqual(TextLimits.clamp(String(repeating: "a", count: 500), to: 80).count, 80)
+    }
+
+    func testCleanRemovesDirectionTricksAndInvisibleCharacters() {
+        XCTAssertEqual(TextLimits.clean("Meds\u{202E}gnip"), "Medsgnip")
+        XCTAssertEqual(TextLimits.clean("a\u{200B}b\u{FEFF}c\u{2066}d"), "abcd")
+    }
+
+    func testLineBreaksBecomeSpacesUnlessAllowed() {
+        XCTAssertEqual(TextLimits.clamp("Keys\nPhone\tBadge", to: 80), "Keys Phone Badge")
+        XCTAssertEqual(TextLimits.clamp("Line one\nLine two", to: 80, allowsNewlines: true), "Line one\nLine two")
+        XCTAssertEqual(TextLimits.clean("bell\u{07}"), "bell")
+    }
+
+    func testEmojiJoinersSurvive() {
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
+        XCTAssertEqual(TextLimits.clean(family), family)
+    }
+
+    func testCollectionLimits() {
+        XCTAssertTrue(CollectionLimits.hasRoom(99, under: CollectionLimits.lists))
+        XCTAssertFalse(CollectionLimits.hasRoom(100, under: CollectionLimits.lists))
+        XCTAssertEqual([CollectionLimits.lists, CollectionLimits.stepsPerList, CollectionLimits.foods], [100, 100, 500])
     }
 }
 

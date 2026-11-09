@@ -2,7 +2,7 @@ import XCTest
 @testable import Glance
 
 // MARK: - BundleResourceTests
-// Covers: Glance/Resources/Info.plist (CFBundleIcons, CFBundleURLTypes, orientations), PrivacyInfo.xcprivacy, GlanceShared/Sources/Store/WidgetDataBridge.swift (GlanceLink.scheme)
+// Covers: Glance/Resources/Info.plist (CFBundleIcons, CFBundleURLTypes, orientations), PrivacyInfo.xcprivacy, GlanceShared/Sources/Store/GlanceLink.swift (GlanceLink.scheme)
 
 final class BundleResourceTests: XCTestCase {
 

@@ -1,9 +1,10 @@
 import XCTest
 import UIKit
+import SwiftUI
 @testable import Glance
 
 // MARK: - FontThemeTests
-// Covers: GlanceShared/Sources/Design/FontTheme.swift (FontThemes, BundledFont, MarkerFontTheme faces), GlanceShared/Sources/Store/WidgetDataBridge.swift (fontThemeID(in:)),
+// Covers: GlanceShared/Sources/Design/FontTheme.swift (FontThemes, BundledFont, MarkerFontTheme faces, SystemFontTheme.native), GlanceShared/Sources/Store/WidgetDataBridge.swift (fontThemeID(in:)),
 // Glance/Resources/Info.plist and GlanceWidgetExtension/Info.plist (UIAppFonts)
 
 final class FontThemeTests: XCTestCase {
@@ -70,5 +71,22 @@ final class FontThemeTests: XCTestCase {
     func testUnknownFontThemeReadsAsDefault() {
         store.set("not-a-theme", forKey: WidgetDataBridge.fontThemeKey)
         XCTAssertEqual(WidgetDataBridge.fontThemeID(in: store), FontThemes.default)
+    }
+
+    // MARK: System theme
+
+    func testSystemThemeIsPlainSanFranciscoForEveryRole() {
+        let system = SystemFontTheme()
+        for role in FontRole.allCases {
+            XCTAssertEqual(system.font(role), SystemFontTheme.native(role, design: .default), "\(role)")
+        }
+        XCTAssertEqual(system.font(.appTitle), Font.system(.largeTitle, design: .default).weight(.bold))
+    }
+
+    func testMarkerThemeHandLettersTitlesButReadsBodyInRounded() {
+        let marker = MarkerFontTheme()
+        XCTAssertNotEqual(marker.font(.appTitle), SystemFontTheme().font(.appTitle))
+        XCTAssertEqual(marker.font(.rowBody), SystemFontTheme.native(.rowBody, design: .rounded))
+        XCTAssertEqual(marker.font(.widgetBodyRoomy), SystemFontTheme.native(.widgetBodyRoomy, design: .rounded))
     }
 }

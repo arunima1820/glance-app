@@ -33,15 +33,15 @@ struct StepSnapshot: Codable, Identifiable {
 /// it rewrites the snapshot and reloads the widgets.
 enum WidgetDataBridge {
     /// App Group key for the list snapshot the widget draws.
-    static let snapshotKey = "glance.widget.snapshot"
+    static let snapshotKey = StorageKeys.widgetSnapshot
     /// App Group key for the list the user pinned to the widget (from a tile pin).
-    static let pinnedKey = "glance.widget.pinnedThemeID"
+    static let pinnedKey = StorageKeys.widgetPinnedTheme
     /// When the user last pinned or unpinned (auto-pins only win if their list came round after this).
-    static let pinnedAtKey = "glance.widget.pinnedAt"
+    static let pinnedAtKey = StorageKeys.widgetPinnedAt
     /// App Group key for the Settings "Title style" (so the widget uses the same fonts).
-    static let fontThemeKey = "glance.fontTheme"
+    static let fontThemeKey = StorageKeys.fontTheme
     /// App Group key for the food snapshot (written by the Food tab, milestone 3).
-    static let foodKey = "glance.widget.food"
+    static let foodKey = StorageKeys.widgetFood
     /// The App Group defaults shared by app + widget (also used by `@AppStorage(store:)`).
     /// Every reader/writer below takes a `store` so tests can pass an isolated suite.
     /// Falls back to standard defaults if the App Group is missing (misconfigured signing).
@@ -84,6 +84,12 @@ enum WidgetDataBridge {
         store.string(forKey: fontThemeKey).flatMap(FontThemeID.init(rawValue:)) ?? FontThemes.default
     }
 
+    /// Settings → "Hide details on Lock Screen": the Lock Screen widget then shows only a count.
+    /// - Parameter store: where to read it (the App Group by default).
+    static func hidesLockScreenDetails(in store: UserDefaults = defaults) -> Bool {
+        store.bool(forKey: StorageKeys.lockScreenHidesDetails)
+    }
+
     /// Asks WidgetKit to redraw (e.g. after a Settings change the widget reflects).
     static func reloadWidgets() {
         WidgetCenter.shared.reloadAllTimelines()
@@ -97,13 +103,14 @@ enum WidgetDataBridge {
     ///   - now: reference moment for "done this period".
     ///   - calendar: calendar for the period math (injectable for tests).
     static func snapshot(of theme: Theme, now: Date = Date(), calendar: Calendar = .current) -> ThemeSnapshot {
-        ThemeSnapshot(
+        let start = theme.currentPeriodStart(now: now, calendar: calendar)   // once, not per step
+        return ThemeSnapshot(
             id: theme.id,
             name: TextLimits.clamp(theme.name, to: TextLimits.name),
             colorToken: theme.colorToken,
             iconEmoji: theme.iconEmoji,
             steps: theme.orderedSteps.map { step in
-                let current = theme.isDone(step.completedAt, now: now, calendar: calendar)
+                let current = Theme.counts(step.completedAt, since: start)
                 return StepSnapshot(id: step.id, text: TextLimits.clamp(step.text, to: TextLimits.step),
                                     iconEmoji: step.iconEmoji,
                                     completedAt: current ? step.completedAt : nil)
@@ -114,12 +121,46 @@ enum WidgetDataBridge {
         )
     }
 
-    /// Saves snapshots of `themes` (in the order given) and asks the widget to redraw.
+    /// Most lists the widgets are sent (the pinned one is always included).
+    static let widgetListLimit = 20
+    /// Most steps per list the widgets are sent (the large widget shows 14).
+    static let widgetStepLimit = 30
+    /// Most foods the widgets are sent.
+    static let widgetFoodLimit = 60
+    /// Foods further out than this aren't sent (widgets look at most a month ahead, plus the
+    /// 8 days their timeline covers).
+    static let widgetFoodDays = 40
+
+    /// Saves snapshots of `themes` (in the order given) and asks the widget to redraw. Only
+    /// what a widget can show is sent, so a huge list can't push the widget past its small
+    /// memory limit.
+    /// - Parameters:
+    ///   - themes: every list, in display order.
+    ///   - store: where to save it (the App Group by default).
     static func writeSnapshot(_ themes: [Theme], to store: UserDefaults = defaults) {
-        if let data = try? JSONEncoder().encode(themes.map { snapshot(of: $0) }) {
+        if let data = try? JSONEncoder().encode(capped(themes.map { snapshot(of: $0) }, pinned: pinState(in: store).themeID)) {
             store.set(data, forKey: snapshotKey)
         }
         reloadWidgets()
+    }
+
+    /// The first `widgetListLimit` lists (plus the pinned one if it's further down), each
+    /// trimmed to `widgetStepLimit` steps.
+    /// - Parameters:
+    ///   - snapshots: every list's snapshot, in order.
+    ///   - pinned: the pinned list, if any.
+    static func capped(_ snapshots: [ThemeSnapshot], pinned: UUID?) -> [ThemeSnapshot] {
+        var kept = Array(snapshots.prefix(widgetListLimit))
+        if let pinned, !kept.contains(where: { $0.id == pinned }),
+           let pinnedList = snapshots.first(where: { $0.id == pinned }) {
+            kept.append(pinnedList)
+        }
+        return kept.map { list in
+            ThemeSnapshot(id: list.id, name: list.name, colorToken: list.colorToken,
+                                    iconEmoji: list.iconEmoji, steps: Array(list.steps.prefix(widgetStepLimit)),
+                                    iconToken: list.iconToken, recurrence: list.recurrence,
+                                    completedAt: list.completedAt)
+        }
     }
 
     /// Re-reads every theme from `context` (in display order) and rewrites the snapshot.
@@ -141,7 +182,39 @@ enum WidgetDataBridge {
 
     // MARK: Food
 
-    /// Food items for the large widget. Empty until the Food tab writes them (milestone 3).
+    /// The widget's copy of one food: name capped, no description (the widget never shows it).
+    /// - Parameter item: the food.
+    static func widgetSnapshot(of item: FoodItem) -> FoodSnapshot {
+        let snap = item.snapshot
+        return FoodSnapshot(id: snap.id, name: TextLimits.clamp(snap.name, to: TextLimits.name),
+                            useBy: snap.useBy, storage: snap.storage, kinds: snap.kinds,
+                            labels: snap.labels, details: nil, addedAt: snap.addedAt)
+    }
+
+    /// Saves snapshots of the foods widgets can show (due within `widgetFoodDays` or expired,
+    /// soonest first, at most `widgetFoodLimit`) and asks them to redraw.
+    /// - Parameters:
+    ///   - items: every food.
+    ///   - now: the moment of writing.
+    ///   - store: where to save it (the App Group by default).
+    static func writeFood(_ items: [FoodItem], now: Date = Date(), to store: UserDefaults = defaults) {
+        let due = FoodQuery.useSoon(items.map(widgetSnapshot(of:)), now: now,
+                                    lookAheadDays: widgetFoodDays, includeExpired: true)
+        if let data = try? JSONEncoder().encode(Array(due.prefix(widgetFoodLimit))) {
+            store.set(data, forKey: foodKey)
+        }
+        reloadWidgets()
+    }
+
+    /// Re-reads every food from `context` and rewrites the food snapshot.
+    /// Call after any food edit.
+    /// - Parameter context: the app's model context.
+    static func refreshFood(from context: ModelContext) {
+        guard let items = try? context.fetch(FetchDescriptor<FoodItem>()) else { return }
+        writeFood(items)
+    }
+
+    /// Foods for the widgets. Empty until the Food tab writes them; unreadable data reads as empty.
     static func readFood(from store: UserDefaults = defaults) -> [FoodSnapshot] {
         guard let data = store.data(forKey: foodKey),
               let items = try? JSONDecoder().decode([FoodSnapshot].self, from: data)
@@ -171,26 +244,3 @@ struct PinThemeIntent: AppIntent {
         return .result()
     }
 }
-
-// MARK: - GlanceLink
-/// The app's deep links: `glance://theme/<uuid>` opens that list; `glance://open` opens the app.
-enum GlanceLink {
-    static let scheme = "glance"
-    /// Opens the app without a specific list.
-    static let open = URL(string: "glance://open")!
-
-    /// URL that opens a list.
-    /// - Parameter id: the theme's id.
-    static func theme(_ id: UUID) -> URL {
-        URL(string: "\(scheme)://theme/\(id.uuidString)")!
-    }
-
-    /// Parses a theme id out of a `glance://theme/<uuid>` URL.
-    /// - Parameter url: an incoming URL.
-    /// - Returns: the id, or nil for any other / malformed URL.
-    static func themeID(from url: URL) -> UUID? {
-        guard url.scheme == scheme, url.host() == "theme" else { return nil }
-        return UUID(uuidString: url.lastPathComponent)
-    }
-}
-

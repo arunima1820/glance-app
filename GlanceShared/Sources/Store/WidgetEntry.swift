@@ -8,7 +8,8 @@ struct GlanceEntry {
     let date: Date
     let themes: [ThemeSnapshot]
     let selectedThemeID: String?
-    /// Food for the large widget's right column; the column only appears when non-empty.
+    /// Food for the large widget's right column (already narrowed to "use soon"); the column
+    /// only appears when non-empty.
     let food: [FoodSnapshot]
 
     init(date: Date, themes: [ThemeSnapshot], selectedThemeID: String?, food: [FoodSnapshot] = []) {
@@ -73,44 +74,27 @@ enum WidgetPlaceholders {
 }
 
 // MARK: - FoodSnapshot
-/// A grocery item as the widget sees it (written by the Food tab, milestone 3).
-struct FoodSnapshot: Codable, Identifiable {
+/// A food as the widgets, search and Recently removed see it. Everything after `name` is
+/// optional so a snapshot from an older build still decodes.
+struct FoodSnapshot: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     let name: String
-    let useByDate: Date
-}
+    /// Use-by day (nil only for foods saved by early builds).
+    var useBy: Date? = nil
+    var storage: FoodStorage? = nil
+    var kinds: [FoodKind]? = nil
+    var labels: [String]? = nil
+    var details: String? = nil
+    var addedAt: Date? = nil
 
-// MARK: - Freshness
-/// The freshness pill: "expired" / "N days" / "weeks". Text is always shown with the
-/// color, so color is never the only signal.
-enum Freshness: Equatable {
-    case expired
-    case days(Int)
-    case weeks
-
-    /// Classifies a use-by date relative to today (calendar days, not hours).
-    /// - Parameters:
-    ///   - useBy: the item's use-by date.
-    ///   - now: the reference moment.
-    ///   - calendar: calendar for the day count (injectable for tests).
-    static func of(useBy: Date, now: Date = Date(), calendar: Calendar = .current) -> Freshness {
-        let today = calendar.startOfDay(for: now)
-        let day = calendar.startOfDay(for: useBy)
-        let left = calendar.dateComponents([.day], from: today, to: day).day ?? 0
-        if left < 0 { return .expired }
-        return left >= 14 ? .weeks : .days(left)
-    }
-
-    /// Pill text.
-    var label: String {
-        switch self {
-        case .expired: return "expired"
-        case .days(0): return "today"
-        case .days(1): return "1 day"
-        case .days(let n): return "\(n) days"
-        case .weeks: return "weeks"
-        }
-    }
+    /// Where it lives (fridge when unknown).
+    var place: FoodStorage { storage ?? .fridge }
+    /// Its kinds (none when unknown).
+    var kindList: [FoodKind] { kinds ?? [] }
+    /// Its Food labels, main first (none when unknown).
+    var labelList: [String] { labels ?? [] }
+    /// Canned: long best-by date, pill hidden until it's close.
+    var isCanned: Bool { kindList.contains(.canned) }
 }
 
 // MARK: - WidgetPin

@@ -33,18 +33,13 @@ final class DesignConfigTests: XCTestCase {
 
     func testInjectedFlagProviderSuppliesFlags() {
         var custom = FeatureFlags.default
-        custom.defaultCompletionStyle = .perItem
-        custom.survivalRecipesEnabled = true
+        custom.groceriesTabVisible = false
         let config = DesignConfig(flagProvider: StaticFlags(custom))
         XCTAssertEqual(config.flags, custom)
     }
 
     func testDefaultFlagsMatchLockedDecisions() {
         let f = FeatureFlags.default
-        XCTAssertEqual(f.defaultCompletionStyle, .sweep)
-        XCTAssertTrue(f.themeIconsOnByDefault)
         XCTAssertTrue(f.groceriesTabVisible)
-        XCTAssertFalse(f.survivalRecipesEnabled, "Survival recipes are v2 — off by default")
-        XCTAssertFalse(f.cameraFoodEnabled, "Camera food is v2 — off by default")
     }
 }

@@ -46,7 +46,6 @@ final class ThemeCompletionTests: XCTestCase {
         let (theme, steps) = twoStepTheme()
         let now = date(2026, 11, 1, 9)
         theme.sweepComplete(now: now)
-        XCTAssertEqual(theme.lastSweptAt, now)
         XCTAssertTrue(steps.allSatisfy { $0.completedAt == now })
         XCTAssertTrue(theme.isListComplete(now: date(2026, 11, 1, 18), calendar: calendar))
     }
@@ -68,7 +67,6 @@ final class ThemeCompletionTests: XCTestCase {
         let (theme, steps) = twoStepTheme()
         theme.sweepComplete(now: date(2026, 11, 1, 9))
         theme.resetCompletion(now: date(2026, 11, 1, 10))
-        XCTAssertNil(theme.lastSweptAt)
         XCTAssertTrue(steps.allSatisfy { $0.completedAt == nil })
     }
 
@@ -95,7 +93,6 @@ final class ThemeCompletionTests: XCTestCase {
         let now = date(2026, 11, 1)
         theme.sweepComplete(now: now)
         theme.toggle(steps[0], now: now, calendar: calendar)
-        XCTAssertNil(theme.lastSweptAt)
         XCTAssertFalse(theme.isListComplete(now: now, calendar: calendar))
     }
 
